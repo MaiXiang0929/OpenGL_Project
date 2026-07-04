@@ -12,7 +12,7 @@ include_directories(
 add_executable(OpenGL_Project
     src/main.cpp
     libs/glad/src/glad.c
-)
+ "src/shader.h")
 
 # GLFW库路径（注意版本可能不同）
 set(GLFW_LIB ${CMAKE_SOURCE_DIR}/libs/glfw/lib-vc2022/glfw3.lib)
