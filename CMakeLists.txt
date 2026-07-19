@@ -10,6 +10,7 @@ add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
 include_directories(
     libs/glfw/include
     libs/glad/include
+    libs/cyCodeBase
 )
 
 add_executable(OpenGL_Project
@@ -24,7 +25,6 @@ target_link_libraries(OpenGL_Project
     ${GLFW_LIB}
     opengl32
 )
-
 
 # 编译后自动将源码目录下的 assets 文件夹拷贝到可执行文件输出目录
 add_custom_command(TARGET OpenGL_Project POST_BUILD
