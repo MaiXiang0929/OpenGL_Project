@@ -6,9 +6,26 @@
     #include <sstream>      // 用于将文件内容转换成字符串
     #include <vector>
 
-	// cyCodeBase 头文件
+    // cyCodeBase 头文件
     #include "cyMatrix.h"
     #include "cyTriMesh.h"
+    
+    // 构造标准的 OpenGL 正交投影矩阵
+    inline cy::Matrix4f OrthoMatrix(float left, float right, float bottom, float top, float nearVal, float farVal) {
+        cy::Matrix4f m;
+        m.Zero(); // 将矩阵所有元素初始化为 0
+
+        m.cell[0] = 2.0f / (right - left);
+        m.cell[5] = 2.0f / (top - bottom);
+        m.cell[10] = -2.0f / (farVal - nearVal);
+
+        m.cell[12] = -(right + left) / (right - left);
+        m.cell[13] = -(top + bottom) / (top - bottom);
+        m.cell[14] = -(farVal + nearVal) / (farVal - nearVal);
+        m.cell[15] = 1.0f;
+
+        return m;
+    }
 
     // 屏幕宽高
     const unsigned int SCR_WIDTH = 1920;
@@ -275,6 +292,8 @@
         // 开启深度测试，防止 3D 模型渲染出现前后遮挡错误
         glEnable(GL_DEPTH_TEST);
 
+        glPointSize(3.0f);               // 将点放大为 3 个像素
+
         // =========
         // 渲染主循环
         // =========
@@ -291,8 +310,15 @@
             if (isPerspective) {
                 projMatrix.SetPerspective(45.0f * (3.14159f / 180.0f), aspect, 0.1f, 1000.0f);
             } else {
-				float scale = 1.0f / cameraDistance;
-                projMatrix = cy::Matrix4f::Scale(cy::Vec3f(scale / aspect, scale, 0.1f));
+                // 1. 计算与透视投影在 cameraDistance 处等高的视口尺寸
+                float fovY = 45.0f * (3.14159f / 180.0f);
+                float halfHeight = cameraDistance * tan(fovY / 2.0f);
+                float halfWidth = halfHeight * aspect;
+
+                // 2. 使用 cyMatrix 的标准正交投影函数
+                // 范围：[left, right, bottom, top, near, far]
+                // 这样既修复了 Z 轴剪裁问题，又能保证按下 P 键切换时，模型在屏幕上的大小保持不变！
+                projMatrix = OrthoMatrix(-halfWidth, halfWidth, -halfHeight, halfHeight, 0.1f, 1000.0f);
             }
 
 			// View 矩阵，沿Z轴负方向平移相机
