@@ -25,7 +25,12 @@ libs/
 └── glfw/
     ├── include/
     └── lib-vc2022/glfw3.lib  # 仅支持 VS2022 编译器
+```
+
+## projects文件夹说明
+projects为课程作业项目的实现步骤及代码的obsidian笔记
 
 ## 目前进度。。。
 目前已完成以下内容：
     Project 1 : Hello World
+    Project 2 : Transformations
