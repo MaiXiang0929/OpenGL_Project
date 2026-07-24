@@ -9,6 +9,9 @@
     // cyCodeBase 头文件
     #include "cyMatrix.h"
     #include "cyTriMesh.h"
+
+	// 自定义的 LightGizmo 类，用于渲染光源位置的可视化辅助工具
+    #include "LightGizmo.h"
     
     // 构造标准的 OpenGL 正交投影矩阵
     inline cy::Matrix4f OrthoMatrix(float left, float right, float bottom, float top, float nearVal, float farVal) {
@@ -31,8 +34,10 @@
     const unsigned int SCR_WIDTH = 1920;
     const unsigned int SCR_HEIGHT = 1080;
 
+
     // 全局变量
-	float rotX = 0.0f, rotY = 0.0f; // 旋转角度
+	float rotX = 0.0f, rotY = 0.0f; // 物体旋转角度
+	float lightRotX = 0.0f, lightRotY = 0.0f; // 光源旋转角度
 	float cameraDistance = 50.0f; // 相机距离
 	double lastX, lastY; // 上一次鼠标位置
 	bool leftDown = false, rightDown = false; // 鼠标按键状态
@@ -143,10 +148,18 @@
 		lastX = xpos;
         lastY = ypos;
 
+		bool ctrlDown = (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
+                         glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS);
+
 		// 左键旋转
         if (leftDown) {
-            rotX += (float)dy * 0.01f;
-			rotY += (float)dx * 0.01f;
+            if (ctrlDown) {
+                lightRotX += (float)dy * 0.01f;
+                lightRotY += (float)dx * 0.01f;
+            }else {
+                rotX += (float)dy * 0.01f;
+                rotY += (float)dx * 0.01f;
+            }
         }
 
 		// 右键缩放
@@ -202,8 +215,21 @@
             std::cerr << "Failed to load obj: " << objPath << std::endl;
             return -1;
         }
-        mesh.ComputeBoundingBox();
-        cy::Vec3f objCenter = (mesh.GetBoundMax() + mesh.GetBoundMin()) * 0.5f;
+		mesh.ComputeBoundingBox(); // 计算模型的包围盒
+		mesh.ComputeNormals();  // 计算模型的法线
+		cy::Vec3f objCenter = (mesh.GetBoundMax() + mesh.GetBoundMin()) * 0.5f; // 模型中心点
+
+		// 将模型顶点和法线数据存储到 std::vector 中，方便后续传递给 OpenGL
+        std::vector<cy::Vec3f> vertices;
+        std::vector<cy::Vec3f> normals;
+        for (int i = 0; i < mesh.NF(); ++i) { // 遍历所有面
+            cy::TriMesh::TriFace face = mesh.F(i);
+            cy::TriMesh::TriFace faceNormal = mesh.FN(i);
+            for (int j = 0; j < 3; ++j) {     // 每个三角形 3 个顶点
+                vertices.push_back(mesh.V(face.v[j]));
+                normals.push_back(mesh.VN(faceNormal.v[j]));
+            }
+        }
 
         // 初始化 GLFW 窗口并配置 OpenGL 上下文
         if (!glfwInit()) {
@@ -235,6 +261,10 @@
             return -1;
         }
 
+		// 初始化 LightGizmo 对象，用于渲染光源位置的可视化辅助工具
+        LightGizmo lightGizmo;
+        lightGizmo.Init("assets/shaders/billboard.vert", "assets/shaders/billboard.frag");
+
         // 注册输入回调
         glfwSetMouseButtonCallback(window, mouse_button_callback);
         glfwSetCursorPosCallback(window, cursor_position_callback);
@@ -245,45 +275,51 @@
         CompileShaders();
 
         // 配置顶点数组 (VAO) 与顶点缓冲 (VBO)
-        GLuint VAO, VBO;
+		GLuint VAO, VBO[2]; // VBO[0] 顶点位置，VBO[1] 用于顶点法线
 
         // 必须最先创建并绑定 VAO
         glGenVertexArrays(1, &VAO);
         glBindVertexArray(VAO); // 激活 VAO 状态，后续的 VBO 关系及属性指针都会被它“记录”下来
 
         // 创建并绑定 VBO
-        glGenBuffers(1, &VBO);
-        glBindBuffer(GL_ARRAY_BUFFER, VBO); // 绑定到状态机插槽
-        //  将 cyTriMesh 的顶点数据传给 GPU (NV 表示顶点数量)
-        glBufferData(GL_ARRAY_BUFFER, sizeof(cy::Vec3f) * mesh.NV(), &mesh.V(0), GL_STATIC_DRAW);
-
+        glGenBuffers(2, VBO);
+        glBindBuffer(GL_ARRAY_BUFFER, VBO[0]); // 绑定到状态机插槽
+		// 整理后的顶点数组上传到 GPU
+        glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(cy::Vec3f), vertices.data(), GL_STATIC_DRAW);
+        glBindBuffer(GL_ARRAY_BUFFER, VBO[1]);
+		// 整理后的法线数组上传到 GPU
+        glBufferData(GL_ARRAY_BUFFER, normals.size() * sizeof(cy::Vec3f), normals.data(), GL_STATIC_DRAW);
 
         // 动态获取顶点属性在着色器中的入口位置
         GLint posLoc = glGetAttribLocation(shaderProgram, "pos");
-        //GLint clrLoc = glGetAttribLocation(shaderProgram, "clr");
+        GLint normalLoc = glGetAttribLocation(shaderProgram, "normal");
+
 
         // 安全检查：如果名字拼错或者着色器里没用到该变量，OpenGL 会返回 -1
         if (posLoc == -1) {
 		    std::cerr << "[Error] Vertex attribute 'pos' not found in shader." << std::endl; 
         }
-    //    if (clrLoc == -1) {
-		  //  std::cerr << "[Error] Vertex attribute 'clr' not found in shader." << std::endl;
-    //    }
+      
+        if (normalLoc == -1) {
+            std::cerr << "[Error] Vertex attribute 'normal' not found in shader." << std::endl;
+        }
 
         // 告诉 OpenGL 如何解析顶点数据
         // 位置信息 
         if (posLoc != -1) { // 确保位置有效再配置
+            glBindBuffer(GL_ARRAY_BUFFER, VBO[0]); 	// 绑定 VBO[0]
             // 参数含义：属性位置0 | 每次读取3个值 | 数据类型Float | 不归一化 | 步长 | 起始偏移量0
-            glVertexAttribPointer(posLoc, 3, GL_FLOAT, GL_FALSE, sizeof(cy::Vec3f), (GLvoid*)0);
-            glEnableVertexAttribArray(posLoc); // 激活 location = 0 的顶点属性 
+            glVertexAttribPointer(posLoc, 3, GL_FLOAT, GL_FALSE, 0, (GLvoid*)0);
+            glEnableVertexAttribArray(posLoc); // 激活 location = posLoc 的顶点属性 
         }
 
-	   // // 颜色信息
-    //    if (clrLoc != -1) {
-    //        // 参数含义：属性位置1 | 每次读取4个值 | 数据类型Float | 不归一化 | 步长7*float | 起始偏移量3 * float（跳过前面的位置数据）
-    //        glVertexAttribPointer(clrLoc, 4, GL_FLOAT, GL_FALSE, 7 * sizeof(float), (GLvoid*)(3 * sizeof(float)));
-    //        glEnableVertexAttribArray(clrLoc);
-    //    }
+
+		// 法线信息
+        if (normalLoc != -1) { 
+            glBindBuffer(GL_ARRAY_BUFFER, VBO[1]);
+            glVertexAttribPointer(normalLoc, 3, GL_FLOAT, GL_FALSE, 0, (GLvoid*)0);
+            glEnableVertexAttribArray(normalLoc); // 激活 location = normalLoc 的顶点属性 
+        }
    
         // 解绑（非必须，为了保持状态机干净）
         glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -292,7 +328,7 @@
         // 开启深度测试，防止 3D 模型渲染出现前后遮挡错误
         glEnable(GL_DEPTH_TEST);
 
-        glPointSize(3.0f);               // 将点放大为 3 个像素
+        glPointSize(1.0f);               // 将点放大为?个像素
 
         // =========
         // 渲染主循环
@@ -323,20 +359,36 @@
 
 			// View 矩阵，沿Z轴负方向平移相机
             cy::Matrix4f viewMatrix = cy::Matrix4f::Translation(cy::Vec3f(0, 0, -cameraDistance));
-
 			// Model 矩阵，旋转 + 居中
             cy::Matrix4f modelMatrix = cy::Matrix4f::RotationX(rotX) * cy::Matrix4f::RotationY(rotY);
             modelMatrix *= cy::Matrix4f::Translation(-objCenter); // 减去包围盒中心，使物体居于原点
 
+            cy::Matrix4f mv = viewMatrix * modelMatrix;
             cy::Matrix4f mvp = projMatrix * viewMatrix * modelMatrix;
 
-            // mvp传入shader
+            // 计算光源位置
+            // 光源初始位置
+            cy::Vec3f lightBasePos(0.0f, 10.0f, 20.0f);
+            // 通过 lightRot 变量将光源绕物体中心旋转
+            cy::Matrix4f lightRotMatrix = cy::Matrix4f::RotationX(lightRotX) * cy::Matrix4f::RotationY(lightRotY);
+            cy::Vec4f lightPosWorld = lightRotMatrix * cy::Vec4f(lightBasePos.x, lightBasePos.y, lightBasePos.z, 1.0f);
+            // 统一转换到 View Space，以便在着色器中进行光照计算
+            cy::Vec4f lightPosView = viewMatrix * lightPosWorld;
+
+			// 向着色器传递 Uniform 参数
             int mvpLocation = glGetUniformLocation(shaderProgram, "mvp");
-		    glUniformMatrix4fv(mvpLocation, 1, GL_FALSE, &mvp.cell[0]); // 设置 mvp uniform 变量
+			int mvLocation = glGetUniformLocation(shaderProgram, "mv");
+            int lightPosLocation = glGetUniformLocation(shaderProgram, "lightPos");
+		    glUniformMatrix4fv(mvpLocation, 1, GL_FALSE, &mvp.cell[0]);
+            glUniformMatrix4fv(mvLocation, 1, GL_FALSE, &mv.cell[0]);
+            glUniform3f(lightPosLocation, lightPosView.x, lightPosView.y, lightPosView.z);
 
             // 执行绘制
             glBindVertexArray(VAO);                 // 绑定 VAO，自动恢复之前配置的所有 VBO 映射
-            glDrawArrays(GL_POINTS, 0, mesh.NV());       // 绘制图元：类型为三角形，从第0个顶点开始，绘制3个顶点
+            glDrawArrays(GL_TRIANGLES, 0, vertices.size());       // 绘制图元：类型为三角形，从第0个顶点开始，绘制?个顶点
+
+			// 绘制光源 Gizmo
+            lightGizmo.Draw(projMatrix, viewMatrix, cy::Vec3f(lightPosWorld.x, lightPosWorld.y, lightPosWorld.z), 2.0f);
 
             // 双缓冲区交换与事件触发
             glfwSwapBuffers(window);
@@ -347,7 +399,7 @@
         // 清理资源
         // =======
         glDeleteVertexArrays(1, &VAO);
-        glDeleteBuffers(1, &VBO);
+        glDeleteBuffers(1, VBO);
         glDeleteProgram(shaderProgram);
 
         glfwTerminate();
