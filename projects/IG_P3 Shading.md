@@ -1,0 +1,749 @@
+## Requirements
+[项目要求](https://graphics.cs.utah.edu/courses/cs6610/spring2021/?prj=2)
+
+---
+## 准备工作
+### 创建新文件
+按照如下文件夹结构，新建文件
+```text
+OpenGL_Project/
+├── src/
+│   ├── main.cpp
+│   ├── shader.h
+│   ├── LightGizmo.cpp
+│   ├── LightGizmo.h
+│
+├── assets/
+│   ├── models/
+│   ├── shaders/
+|   │   ├── triangle.vert
+│   |   ├── triangle.frag
+│   |   ├── billboard.vert
+│   |   ├── billboard.frag
+│
+├── libs/
+```
+
+## 代码
+### 修改triangle shader
+在：
+
+```text
+shaders/triangle.vert
+```
+
+写：
+
+```glsl
+#version 330 core
+
+layout (location = 0) in vec3 pos;
+layout (location = 1) in vec3 normal;
+
+uniform mat4 mvp;
+uniform mat4 mv;
+
+out vec3 fragPos;
+out vec3 fragNormal;
+
+void main()
+{
+	gl_Position = mvp * vec4(pos, 1.0);
+
+	// 顶点位置和法线传递给片段着色器
+	fragPos = vec3(mv *  vec4(pos, 1.0));
+	mat3 normalMatrix = transpose(inverse(mat3(mv))); // 相机变换矩阵的逆转置矩阵处理法线
+	fragNormal = normalize(normalMatrix * normal);
+}
+```
+
+在：
+
+```text
+shaders/triangle.frag
+```
+
+写：
+
+```glsl
+#version 330 core
+
+in vec3 fragPos;
+in vec3 fragNormal;
+
+layout(location = 0) out vec4 color;
+
+uniform vec3 lightPos;
+
+void main()
+{
+	// 材质与光源参数（硬编码）
+	vec3 ambientColor = vec3(0.1, 0.1, 0.15);  // 环境光底色
+    vec3 diffuseColor = vec3(1.0, 0.0, 0.0);   // 物体表面漫反射颜色(红)
+    vec3 specularColor = vec3(1.0, 1.0, 1.0);  // 高光颜色(纯白)
+    float shininess = 64.0;                    // 高光系数大小
+    vec3 lightIntensity = vec3(1.0, 1.0, 1.0); // 光源强度
+
+    vec3 norm =  normalize(fragNormal);
+
+    // Ambient
+    vec3 ambient = ambientColor * lightIntensity;
+
+    // Diffuse
+    vec3 lightDir = normalize(lightPos - fragPos);
+    float diff = max(dot(norm, lightDir), 0.0);
+    vec3 diffuse = diff * diffuseColor * lightIntensity;
+
+    // Specular (镜面高光 - Blinn)
+    vec3 viewDir = normalize(-fragPos); 
+    vec3 halfwayDir = normalize(lightDir + viewDir); 
+    float spec = pow(max(dot(norm, halfwayDir), 0.0), shininess);
+    vec3 specular = spec * specularColor * lightIntensity;
+
+    // fianalColor
+    vec3 finalColor = ambient + diffuse + specular;
+
+    color = vec4(finalColor, 1.0);
+}
+```
+
+### 添加billboard shader
+
+在：
+
+```text
+shaders/billboard.vert
+```
+
+写：
+
+```glsl
+#version 330 core
+layout (location = 0) in vec3 pos;
+layout (location = 1) in vec2 texCoord;
+
+uniform mat4 proj;
+uniform mat4 view;
+uniform vec3 lightWorldPos; // 光源在世界空间中的中心点位置
+uniform float scale;        // 图标的缩放大小
+
+out vec2 TexCoord;
+
+void main()
+{
+    // 世界坐标转换到 View Space，并在 X、Y 平面上直接偏移，实现永远朝向相机
+    vec4 centerPosView = view * vec4(lightWorldPos, 1.0);
+    vec4 vertexPosView = centerPosView + vec4(pos.x * scale, pos.y * scale, 0.0, 0.0);
+
+    gl_Position = proj * vertexPosView;
+    TexCoord = texCoord;
+}
+```
+
+在：
+
+```text
+shaders/billboard.frag
+```
+
+写：
+
+```glsl
+#version 330 core
+in vec2 TexCoord;
+out vec4 color;
+
+void main()
+{
+    float dist = distance(TexCoord, vec2(0.5, 0.5));
+    if (dist > 0.5) discard; // 裁剪成一个圆
+    
+    color = vec4(1.0, 1.0, 0.0, 1.0); // 纯黄色
+}
+```
+
+### 添加LightGizmo.cpp及其头文件LightGizmo.h
+LightGizmo.cpp
+```cpp
+#include "LightGizmo.h"
+#include <fstream>
+#include <sstream>
+#include <iostream>
+
+LightGizmo::LightGizmo() {}
+
+LightGizmo::~LightGizmo() {
+    if (VAO) glDeleteVertexArrays(1, &VAO);
+    if (VBO) glDeleteBuffers(1, &VBO);
+    if (shaderProgram) glDeleteProgram(shaderProgram);
+}
+
+std::string LightGizmo::ReadFile(const std::string& filePath) {
+    std::ifstream file;
+    file.exceptions(std::ifstream::failbit | std::ifstream::badbit);
+    try {
+        file.open(filePath);
+        std::stringstream ss;
+        ss << file.rdbuf();
+        file.close();
+        return ss.str();
+    }
+    catch (std::ifstream::failure& e) {
+        std::cerr << "[LightGizmo Shader Error] Cannot read: " << filePath << std::endl;
+        return "";
+    }
+}
+
+void LightGizmo::CompileShaders(const std::string& vertPath, const std::string& fragPath) {
+    std::string vCodeStr = ReadFile(vertPath);
+    const char* vCode = vCodeStr.c_str();
+    GLuint vertShader = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(vertShader, 1, &vCode, nullptr);
+    glCompileShader(vertShader);
+
+    // 检查顶点着色器编译错误
+    GLint success;
+    GLchar infoLog[512];
+    glGetShaderiv(vertShader, GL_COMPILE_STATUS, &success);
+    if (!success) {
+        glGetShaderInfoLog(vertShader, 512, NULL, infoLog);
+        std::cerr << "[LightGizmo] Vertex Shader Compilation Failed:\n" << infoLog << std::endl;
+    }
+
+    std::string fCodeStr = ReadFile(fragPath);
+    const char* fCode = fCodeStr.c_str();
+    GLuint fragShader = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(fragShader, 1, &fCode, nullptr);
+    glCompileShader(fragShader);
+
+    // 检查片元着色器编译错误
+    glGetShaderiv(fragShader, GL_COMPILE_STATUS, &success);
+    if (!success) {
+        glGetShaderInfoLog(fragShader, 512, NULL, infoLog);
+        std::cerr << "[LightGizmo] Fragment Shader Compilation Failed:\n" << infoLog << std::endl;
+    }
+
+    shaderProgram = glCreateProgram();
+    glAttachShader(shaderProgram, vertShader);
+    glAttachShader(shaderProgram, fragShader);
+    glLinkProgram(shaderProgram);
+
+    // 检查程序链接错误
+    glGetProgramiv(shaderProgram, GL_LINK_STATUS, &success);
+    if (!success) {
+        glGetProgramInfoLog(shaderProgram, 512, NULL, infoLog);
+        std::cerr << "[LightGizmo] Shader Program Linking Failed:\n" << infoLog << std::endl;
+    }
+
+    glDeleteShader(vertShader);
+    glDeleteShader(fragShader);
+}
+
+void LightGizmo::Init(const std::string& vertPath, const std::string& fragPath) {
+    CompileShaders(vertPath, fragPath);
+
+    // 准备一个 2D 矩形面片顶点数据 (位置 + UV)
+    float billboardVertices[] = {
+        -0.5f,  0.5f, 0.0f,    0.0f, 1.0f,
+        -0.5f, -0.5f, 0.0f,    0.0f, 0.0f,
+         0.5f, -0.5f, 0.0f,    1.0f, 0.0f,
+
+        -0.5f,  0.5f, 0.0f,    0.0f, 1.0f,
+         0.5f, -0.5f, 0.0f,    1.0f, 0.0f,
+         0.5f,  0.5f, 0.0f,    1.0f, 1.0f
+    };
+
+    glGenVertexArrays(1, &VAO);
+    glBindVertexArray(VAO);
+
+    glGenBuffers(1, &VBO);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(billboardVertices), billboardVertices, GL_STATIC_DRAW);
+
+    // 顶点位置属性 (Location = 0)
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+    // 纹理坐标属性 (Location = 1)
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+}
+
+void LightGizmo::Draw(const cy::Matrix4f& proj, const cy::Matrix4f& view, const cy::Vec3f& lightWorldPos, float scale) {
+    // 关闭深度测试、让光源图标永远显示在最上层
+    glDisable(GL_DEPTH_TEST);
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    glUseProgram(shaderProgram);
+
+    glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "proj"), 1, GL_FALSE, &proj.cell[0]);
+    glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "view"), 1, GL_FALSE, &view.cell[0]);
+    glUniform3f(glGetUniformLocation(shaderProgram, "lightWorldPos"), lightWorldPos.x, lightWorldPos.y, lightWorldPos.z);
+    glUniform1f(glGetUniformLocation(shaderProgram, "scale"), scale);
+
+    glBindVertexArray(VAO);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindVertexArray(0);
+
+    // 恢复 OpenGL 状态
+    glDisable(GL_BLEND);
+    glEnable(GL_DEPTH_TEST);
+}
+```
+
+LightGizmo.h
+```cpp
+#pragma once
+
+#include <glad/glad.h>
+#include "cyMatrix.h"
+#include <string>
+
+class LightGizmo {
+public:
+    LightGizmo();
+    ~LightGizmo();
+
+    // 初始化：加载着色器并构建面片 VAO/VBO
+    void Init(const std::string& vertPath, const std::string& fragPath);
+
+    // 渲染光源 Gizmo
+    void Draw(const cy::Matrix4f& proj, const cy::Matrix4f& view, const cy::Vec3f& lightWorldPos, float scale);
+
+private:
+    GLuint VAO = 0;
+    GLuint VBO = 0;
+    GLuint shaderProgram = 0;
+
+    std::string ReadFile(const std::string& filePath);
+    void CompileShaders(const std::string& vertPath, const std::string& fragPath);
+};
+```
+
+### 修改main.cpp
+main.cpp
+```cpp
+    #include <iostream>
+    // 注意：GLAD 必须在 GLFW 之前包含，它会引入所需的 OpenGL 头文件
+    #include <glad/glad.h> 
+    #include <GLFW/glfw3.h>
+    #include <fstream>      // 用于读取着色器文件
+    #include <sstream>      // 用于将文件内容转换成字符串
+    #include <vector>
+
+    // cyCodeBase 头文件
+    #include "cyMatrix.h"
+    #include "cyTriMesh.h"
+
+	// 自定义的 LightGizmo 类，用于渲染光源位置的可视化辅助工具
+    #include "LightGizmo.h"
+    
+    // 构造标准的 OpenGL 正交投影矩阵
+    inline cy::Matrix4f OrthoMatrix(float left, float right, float bottom, float top, float nearVal, float farVal) {
+        cy::Matrix4f m;
+        m.Zero(); // 将矩阵所有元素初始化为 0
+
+        m.cell[0] = 2.0f / (right - left);
+        m.cell[5] = 2.0f / (top - bottom);
+        m.cell[10] = -2.0f / (farVal - nearVal);
+
+        m.cell[12] = -(right + left) / (right - left);
+        m.cell[13] = -(top + bottom) / (top - bottom);
+        m.cell[14] = -(farVal + nearVal) / (farVal - nearVal);
+        m.cell[15] = 1.0f;
+
+        return m;
+    }
+
+    // 屏幕宽高
+    const unsigned int SCR_WIDTH = 1920;
+    const unsigned int SCR_HEIGHT = 1080;
+
+
+    // 全局变量
+	float rotX = 0.0f, rotY = 0.0f; // 物体旋转角度
+	float lightRotX = 0.0f, lightRotY = 0.0f; // 光源旋转角度
+	float cameraDistance = 50.0f; // 相机距离
+	double lastX, lastY; // 上一次鼠标位置
+	bool leftDown = false, rightDown = false; // 鼠标按键状态
+	bool isPerspective = true; // 是否使用透视投影
+	GLuint shaderProgram = 0; // 着色器程序对象
+
+
+    /// <summary>
+    /// 窗口大小改变时的回调函数，用于动态更新 OpenGL 视口
+    /// </summary>
+    /// <param name="window">触发该事件的 GLFW 窗口句柄</param>
+    /// <param name="width">新的窗口宽度</param>
+    /// <param name="height">新的窗口高度</param>
+    void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
+        glViewport(0, 0, width, height);
+    }
+
+    /// <summary>
+    /// 读取文件内容的函数
+    /// </summary>
+    /// <param name="filePath">着色器文件的相对或绝对路径</param>
+    /// <returns>以字符串形式返回的文件源码，若读取失败返回空字符串</returns>
+    std::string ReadFile(const std::string& filePath)
+    {
+        std::ifstream file;
+	    // 设置异常掩码，确保在文件打开失败时抛出异常
+        file.exceptions(std::ifstream::failbit | std::ifstream::badbit);
+        try
+        {
+            file.open(filePath);
+
+            std::stringstream ss;
+            ss << file.rdbuf();
+
+            file.close();
+
+            return ss.str();
+        }
+        catch (std::ifstream::failure& e)
+        {
+            std::cerr << "[Shader File Error] Cannot read: " << filePath << std::endl;
+
+            std::cerr << "Reason: " << e.what() << std::endl;
+
+            return "";
+        }
+    }
+
+    /// <summary>
+	/// 着色器编译函数，负责读取、编译顶点和片元着色器，并链接成一个着色器程序
+    /// </summary>
+    void CompileShaders() {
+		if (shaderProgram != 0) glDeleteProgram(shaderProgram); // 删除旧的着色器程序
+
+        // 编译顶点着色器
+        std::string vertexCodeStr = ReadFile("assets/shaders/triangle.vert");
+        const char* vsSource = vertexCodeStr.c_str();
+        GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
+        glShaderSource(vertexShader, 1, &vsSource, nullptr);
+        glCompileShader(vertexShader);
+
+        // 编译片元着色器
+        std::string fragmentCodeStr = ReadFile("assets/shaders/triangle.frag");
+        const char* fsSource = fragmentCodeStr.c_str();
+        GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
+        glShaderSource(fragmentShader, 1, &fsSource, nullptr);
+        glCompileShader(fragmentShader);
+
+        // 链接着色器程序 (Program) 将顶点与片元组合在一起
+        shaderProgram = glCreateProgram();
+        glAttachShader(shaderProgram, vertexShader); // attach 顶点着色器
+        glAttachShader(shaderProgram, fragmentShader); // attach 片元着色器
+        glLinkProgram(shaderProgram);                  // link 整个程序
+
+        // 链接完成后，单独的着色器对象就可以释放了
+        glDeleteShader(vertexShader);
+        glDeleteShader(fragmentShader);
+        std::cout << "Shaders compiled successfully!" << std::endl;
+    }
+
+    /// <summary>
+	/// 鼠标按键回调函数，用于处理鼠标点击事件
+    /// </summary>
+    /// <param name="window">触发该事件的GLFW窗口句柄</param>
+    /// <param name="button">按下的鼠标按键</param>
+    /// <param name="action">按键动作</param>
+    /// <param name="mods">修饰键状态</param>
+    void mouse_button_callback(GLFWwindow* window, int button, int action, int mods) {
+        if (button == GLFW_MOUSE_BUTTON_LEFT) {
+			if (action == GLFW_PRESS) leftDown = true;
+			else if (action == GLFW_RELEASE) leftDown = false;
+        }
+        if (button == GLFW_MOUSE_BUTTON_RIGHT) {
+            if (action == GLFW_PRESS) rightDown = true;
+            else if (action == GLFW_RELEASE) rightDown = false;
+        }
+    }
+
+    /// <summary>
+	/// 鼠标移动回调函数，用于处理鼠标拖拽事件，左键旋转，右键缩放
+    /// </summary>
+    /// <param name="window">触发该事件的GLFW窗口句柄</param>
+    /// <param name="xpos">当前光标的X坐标</param>
+    /// <param name="ypos">当前光标的Y坐标</param>
+    void cursor_position_callback(GLFWwindow* window, double xpos, double ypos) {
+		double dx = xpos - lastX;
+		double dy = ypos - lastY;
+		lastX = xpos;
+        lastY = ypos;
+
+		bool ctrlDown = (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
+                         glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS);
+
+		// 左键旋转
+        if (leftDown) {
+            if (ctrlDown) {
+                lightRotX += (float)dy * 0.01f;
+                lightRotY += (float)dx * 0.01f;
+            }else {
+                rotX += (float)dy * 0.01f;
+                rotY += (float)dx * 0.01f;
+            }
+        }
+
+		// 右键缩放
+        if (rightDown) {
+			cameraDistance += (float)dy * 0.1f; // 鼠标垂直移动控制缩放
+			if (cameraDistance < 0.1f) cameraDistance = 0.1f; // 防止相机距离过近
+        }
+    }
+
+    /// <summary>
+    /// 键盘输入回调函数，用于处理着色器重载（F6）、投影模式切换（P）、退出（ESC）
+    /// </summary>
+    /// <param name="window">触发该事件的GLFW窗口句柄</param>
+    /// <param name="key">被按下的键盘按键</param>
+    /// <param name="scancode">平台相关的按键扫描码</param>
+    /// <param name="action">按键动作</param>
+    /// <param name="mods">修饰键状态</param>
+    void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
+        // 着色器重载（F6）
+        if (key == GLFW_KEY_F6 && action == GLFW_PRESS) {
+            CompileShaders();
+        }
+
+		// 投影模式切换（P）
+        if (key == GLFW_KEY_P && action == GLFW_PRESS) {
+			isPerspective = !isPerspective;
+        }
+
+		// 退出（ESC）
+        if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
+			glfwSetWindowShouldClose(window, true); 
+        }
+    }
+
+    /// <summary>
+    /// 程序主入口，负责解析参数、初始化环境、加载模型、配置渲染管线并启动主循环。
+    /// </summary>
+    /// <param name="argc">命令行参数数量</param>
+    /// <param name="argv">命令行参数数组，argv[1] 必须是待加载的 .obj 模型的路径</param>
+    /// <returns>int 正常退出返回 0，初始化失败或参数错误返回 -1</returns>
+    int main(int argc, char** argv) {
+		// 检查命令行参数
+        if (argc < 2) {
+			std::cerr << "Usage: " << argv[0] << " <path_to_obj_file>" << std::endl;
+            return -1;
+        }
+
+        std::string objPath = argv[1];
+
+        // 模型数据加载、包围盒计算
+        cy::TriMesh mesh;
+        if (!mesh.LoadFromFileObj(objPath.c_str())) {
+            std::cerr << "Failed to load obj: " << objPath << std::endl;
+            return -1;
+        }
+		mesh.ComputeBoundingBox(); // 计算模型的包围盒
+		mesh.ComputeNormals();  // 计算模型的法线
+		cy::Vec3f objCenter = (mesh.GetBoundMax() + mesh.GetBoundMin()) * 0.5f; // 模型中心点
+
+		// 将模型顶点和法线数据存储到 std::vector 中，方便后续传递给 OpenGL
+        std::vector<cy::Vec3f> vertices;
+        std::vector<cy::Vec3f> normals;
+        for (int i = 0; i < mesh.NF(); ++i) { // 遍历所有面
+            cy::TriMesh::TriFace face = mesh.F(i);
+            cy::TriMesh::TriFace faceNormal = mesh.FN(i);
+            for (int j = 0; j < 3; ++j) {     // 每个三角形 3 个顶点
+                vertices.push_back(mesh.V(face.v[j]));
+                normals.push_back(mesh.VN(faceNormal.v[j]));
+            }
+        }
+
+        // 初始化 GLFW 窗口并配置 OpenGL 上下文
+        if (!glfwInit()) {
+            std::cerr << "Failed to initialize GLFW" << std::endl;
+            return -1;
+        }
+
+        // 配置 GLFW：指定使用 OpenGL 3.3 Core Profile
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+        glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    #ifdef __APPLE__
+        glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE); // Mac 必须加上这行
+    #endif
+
+        // 创建窗口对象
+	    GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "OpenGL", NULL, NULL); // 创建一个 1920x1080 的窗口，标题为 "OpenGL"
+        if (window == NULL) {
+            std::cerr << "Failed to create GLFW window" << std::endl;
+            glfwTerminate();
+            return -1;
+        }
+        glfwMakeContextCurrent(window);
+        glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
+
+        // 初始化 GLAD (运行时动态加载所有 OpenGL 函数指针)
+        if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
+            std::cerr << "Failed to initialize GLAD" << std::endl;
+            return -1;
+        }
+
+		// 初始化 LightGizmo 对象，用于渲染光源位置的可视化辅助工具
+        LightGizmo lightGizmo;
+        lightGizmo.Init("assets/shaders/billboard.vert", "assets/shaders/billboard.frag");
+
+        // 注册输入回调
+        glfwSetMouseButtonCallback(window, mouse_button_callback);
+        glfwSetCursorPosCallback(window, cursor_position_callback);
+        glfwSetKeyCallback(window, key_callback);
+        glfwGetCursorPos(window, &lastX, &lastY);
+
+        // 编译着色器
+        CompileShaders();
+
+        // 配置顶点数组 (VAO) 与顶点缓冲 (VBO)
+		GLuint VAO, VBO[2]; // VBO[0] 顶点位置，VBO[1] 用于顶点法线
+
+        // 必须最先创建并绑定 VAO
+        glGenVertexArrays(1, &VAO);
+        glBindVertexArray(VAO); // 激活 VAO 状态，后续的 VBO 关系及属性指针都会被它“记录”下来
+
+        // 创建并绑定 VBO
+        glGenBuffers(2, VBO);
+        glBindBuffer(GL_ARRAY_BUFFER, VBO[0]); // 绑定到状态机插槽
+		// 整理后的顶点数组上传到 GPU
+        glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(cy::Vec3f), vertices.data(), GL_STATIC_DRAW);
+        glBindBuffer(GL_ARRAY_BUFFER, VBO[1]);
+		// 整理后的法线数组上传到 GPU
+        glBufferData(GL_ARRAY_BUFFER, normals.size() * sizeof(cy::Vec3f), normals.data(), GL_STATIC_DRAW);
+
+        // 动态获取顶点属性在着色器中的入口位置
+        GLint posLoc = glGetAttribLocation(shaderProgram, "pos");
+        GLint normalLoc = glGetAttribLocation(shaderProgram, "normal");
+
+
+        // 安全检查：如果名字拼错或者着色器里没用到该变量，OpenGL 会返回 -1
+        if (posLoc == -1) {
+		    std::cerr << "[Error] Vertex attribute 'pos' not found in shader." << std::endl; 
+        }
+      
+        if (normalLoc == -1) {
+            std::cerr << "[Error] Vertex attribute 'normal' not found in shader." << std::endl;
+        }
+
+        // 告诉 OpenGL 如何解析顶点数据
+        // 位置信息 
+        if (posLoc != -1) { // 确保位置有效再配置
+            glBindBuffer(GL_ARRAY_BUFFER, VBO[0]); 	// 绑定 VBO[0]
+            // 参数含义：属性位置0 | 每次读取3个值 | 数据类型Float | 不归一化 | 步长 | 起始偏移量0
+            glVertexAttribPointer(posLoc, 3, GL_FLOAT, GL_FALSE, 0, (GLvoid*)0);
+            glEnableVertexAttribArray(posLoc); // 激活 location = posLoc 的顶点属性 
+        }
+
+
+		// 法线信息
+        if (normalLoc != -1) { 
+            glBindBuffer(GL_ARRAY_BUFFER, VBO[1]);
+            glVertexAttribPointer(normalLoc, 3, GL_FLOAT, GL_FALSE, 0, (GLvoid*)0);
+            glEnableVertexAttribArray(normalLoc); // 激活 location = normalLoc 的顶点属性 
+        }
+   
+        // 解绑（非必须，为了保持状态机干净）
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+        glBindVertexArray(0);
+
+        // 开启深度测试，防止 3D 模型渲染出现前后遮挡错误
+        glEnable(GL_DEPTH_TEST);
+
+        glPointSize(1.0f);               // 将点放大为?个像素
+
+        // =========
+        // 渲染主循环
+        // =========
+        while (!glfwWindowShouldClose(window)) {
+            glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // 清除颜色与深度缓冲
+
+            glUseProgram(shaderProgram);            // 使用刚才链接的着色器程序
+
+			// 计算 MVP 矩阵
+			float aspect = (float)SCR_WIDTH / (float)SCR_HEIGHT;
+			cy::Matrix4f projMatrix;
+
+            if (isPerspective) {
+                projMatrix.SetPerspective(45.0f * (3.14159f / 180.0f), aspect, 0.1f, 1000.0f);
+            } else {
+                // 1. 计算与透视投影在 cameraDistance 处等高的视口尺寸
+                float fovY = 45.0f * (3.14159f / 180.0f);
+                float halfHeight = cameraDistance * tan(fovY / 2.0f);
+                float halfWidth = halfHeight * aspect;
+
+                // 2. 使用 cyMatrix 的标准正交投影函数
+                // 范围：[left, right, bottom, top, near, far]
+                // 这样既修复了 Z 轴剪裁问题，又能保证按下 P 键切换时，模型在屏幕上的大小保持不变！
+                projMatrix = OrthoMatrix(-halfWidth, halfWidth, -halfHeight, halfHeight, 0.1f, 1000.0f);
+            }
+
+			// View 矩阵，沿Z轴负方向平移相机
+            cy::Matrix4f viewMatrix = cy::Matrix4f::Translation(cy::Vec3f(0, 0, -cameraDistance));
+			// Model 矩阵，旋转 + 居中
+            cy::Matrix4f modelMatrix = cy::Matrix4f::RotationX(rotX) * cy::Matrix4f::RotationY(rotY);
+            modelMatrix *= cy::Matrix4f::Translation(-objCenter); // 减去包围盒中心，使物体居于原点
+
+            cy::Matrix4f mv = viewMatrix * modelMatrix;
+            cy::Matrix4f mvp = projMatrix * viewMatrix * modelMatrix;
+
+            // 计算光源位置
+            // 光源初始位置
+            cy::Vec3f lightBasePos(0.0f, 10.0f, 20.0f);
+            // 通过 lightRot 变量将光源绕物体中心旋转
+            cy::Matrix4f lightRotMatrix = cy::Matrix4f::RotationX(lightRotX) * cy::Matrix4f::RotationY(lightRotY);
+            cy::Vec4f lightPosWorld = lightRotMatrix * cy::Vec4f(lightBasePos.x, lightBasePos.y, lightBasePos.z, 1.0f);
+            // 统一转换到 View Space，以便在着色器中进行光照计算
+            cy::Vec4f lightPosView = viewMatrix * lightPosWorld;
+
+			// 向着色器传递 Uniform 参数
+            int mvpLocation = glGetUniformLocation(shaderProgram, "mvp");
+			int mvLocation = glGetUniformLocation(shaderProgram, "mv");
+            int lightPosLocation = glGetUniformLocation(shaderProgram, "lightPos");
+		    glUniformMatrix4fv(mvpLocation, 1, GL_FALSE, &mvp.cell[0]);
+            glUniformMatrix4fv(mvLocation, 1, GL_FALSE, &mv.cell[0]);
+            glUniform3f(lightPosLocation, lightPosView.x, lightPosView.y, lightPosView.z);
+
+            // 执行绘制
+            glBindVertexArray(VAO);                 // 绑定 VAO，自动恢复之前配置的所有 VBO 映射
+            glDrawArrays(GL_TRIANGLES, 0, vertices.size());       // 绘制图元：类型为三角形，从第0个顶点开始，绘制?个顶点
+
+			// 绘制光源 Gizmo
+            lightGizmo.Draw(projMatrix, viewMatrix, cy::Vec3f(lightPosWorld.x, lightPosWorld.y, lightPosWorld.z), 2.0f);
+
+            // 双缓冲区交换与事件触发
+            glfwSwapBuffers(window);
+            glfwPollEvents();
+        }
+
+        // =======
+        // 清理资源
+        // =======
+        glDeleteVertexArrays(1, &VAO);
+        glDeleteBuffers(1, VBO);
+        glDeleteProgram(shaderProgram);
+
+        glfwTerminate();
+        return 0;
+    }
+
+```
+
+## 运行
+### 运行程序
+开始调试
+
+如果成功，你会看到：
+
+```text
+红色茶壶和黄色光源
+```
+
