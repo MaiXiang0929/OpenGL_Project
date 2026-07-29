@@ -2,12 +2,14 @@
 
 layout (location = 0) in vec3 pos;
 layout (location = 1) in vec3 normal;
+layout (location = 2) in vec2 texCoord;
 
 uniform mat4 mvp;
 uniform mat4 mv;
 
 out vec3 fragPos;
 out vec3 fragNormal;
+out vec2 fragTexCoord;
 
 void main()
 {
@@ -17,4 +19,5 @@ void main()
 	fragPos = vec3(mv *  vec4(pos, 1.0));
 	mat3 normalMatrix = transpose(inverse(mat3(mv))); // 相机变换矩阵的逆转置矩阵处理法线
 	fragNormal = normalize(normalMatrix * normal);
+	fragTexCoord = texCoord;
 }

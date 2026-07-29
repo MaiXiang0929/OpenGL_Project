@@ -5,10 +5,12 @@
     #include <fstream>      // 用于读取着色器文件
     #include <sstream>      // 用于将文件内容转换成字符串
     #include <vector>
+    #include <string>
 
     // cyCodeBase 头文件
     #include "cyMatrix.h"
     #include "cyTriMesh.h"
+    #include "lodepng.h"
 
 	// 自定义的 LightGizmo 类，用于渲染光源位置的可视化辅助工具
     #include "LightGizmo.h"
@@ -28,6 +30,33 @@
         m.cell[15] = 1.0f;
 
         return m;
+    }
+
+    std::string GetDirectoryPath(const std::string& filePath) {
+        size_t pos = filePath.find_last_of("/\\");
+        return (pos == std::string::npos) ? "" : filePath.substr(0, pos + 1);
+    }
+
+    GLuint LoadTexturePNG(const std::string& filePath) {
+        std::vector<unsigned char> image;
+        unsigned width, height;
+        unsigned error = lodepng::decode(image, width, height, filePath);
+        if (error) {
+            std::cerr << "[LodePNG Error] " << lodepng_error_text(error) << " File: " << filePath << std::endl;
+            return 0;
+        }
+
+        GLuint textureID;
+        glGenTextures(1, &textureID);
+        glBindTexture(GL_TEXTURE_2D, textureID);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, image.data());
+        glGenerateMipmap(GL_TEXTURE_2D);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glBindTexture(GL_TEXTURE_2D, 0);
+        return textureID;
     }
 
     // 屏幕宽高
@@ -208,6 +237,7 @@
         }
 
         std::string objPath = argv[1];
+        std::string baseDir = GetDirectoryPath(objPath);
 
         // 模型数据加载、包围盒计算
         cy::TriMesh mesh;
@@ -222,12 +252,21 @@
 		// 将模型顶点和法线数据存储到 std::vector 中，方便后续传递给 OpenGL
         std::vector<cy::Vec3f> vertices;
         std::vector<cy::Vec3f> normals;
+        std::vector<cy::Vec2f> texCoords;
+        bool hasTexCoords = mesh.HasTextureVertices();
         for (int i = 0; i < mesh.NF(); ++i) { // 遍历所有面
             cy::TriMesh::TriFace face = mesh.F(i);
             cy::TriMesh::TriFace faceNormal = mesh.FN(i);
+            cy::TriMesh::TriFace faceTex = hasTexCoords ? mesh.FT(i) : cy::TriMesh::TriFace();
             for (int j = 0; j < 3; ++j) {     // 每个三角形 3 个顶点
                 vertices.push_back(mesh.V(face.v[j]));
                 normals.push_back(mesh.VN(faceNormal.v[j]));
+                if (hasTexCoords) {
+                    cy::Vec3f vt = mesh.VT(faceTex.v[j]);
+                    texCoords.push_back(cy::Vec2f(vt.x, 1.0f - vt.y));
+                } else {
+                    texCoords.push_back(cy::Vec2f(0.0f, 0.0f));
+                }
             }
         }
 
@@ -261,6 +300,17 @@
             return -1;
         }
 
+        GLuint diffTexID = 0, specTexID = 0;
+        if (mesh.NM() > 0) {
+            const auto& mat = mesh.M(0);
+            if (mat.map_Kd.data != nullptr) {
+                diffTexID = LoadTexturePNG(baseDir + mat.map_Kd.data);
+            }
+            if (mat.map_Ks.data != nullptr) {
+                specTexID = LoadTexturePNG(baseDir + mat.map_Ks.data);
+            }
+        }
+
 		// 初始化 LightGizmo 对象，用于渲染光源位置的可视化辅助工具
         LightGizmo lightGizmo;
         lightGizmo.Init("assets/shaders/billboard.vert", "assets/shaders/billboard.frag");
@@ -275,24 +325,27 @@
         CompileShaders();
 
         // 配置顶点数组 (VAO) 与顶点缓冲 (VBO)
-		GLuint VAO, VBO[2]; // VBO[0] 顶点位置，VBO[1] 用于顶点法线
+		GLuint VAO, VBO[3]; // VBO[0] 顶点位置，VBO[1] 用于顶点法线
 
         // 必须最先创建并绑定 VAO
         glGenVertexArrays(1, &VAO);
         glBindVertexArray(VAO); // 激活 VAO 状态，后续的 VBO 关系及属性指针都会被它“记录”下来
 
         // 创建并绑定 VBO
-        glGenBuffers(2, VBO);
+        glGenBuffers(3, VBO);
         glBindBuffer(GL_ARRAY_BUFFER, VBO[0]); // 绑定到状态机插槽
 		// 整理后的顶点数组上传到 GPU
         glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(cy::Vec3f), vertices.data(), GL_STATIC_DRAW);
         glBindBuffer(GL_ARRAY_BUFFER, VBO[1]);
 		// 整理后的法线数组上传到 GPU
         glBufferData(GL_ARRAY_BUFFER, normals.size() * sizeof(cy::Vec3f), normals.data(), GL_STATIC_DRAW);
+        glBindBuffer(GL_ARRAY_BUFFER, VBO[2]);
+        glBufferData(GL_ARRAY_BUFFER, texCoords.size() * sizeof(cy::Vec2f), texCoords.data(), GL_STATIC_DRAW);
 
         // 动态获取顶点属性在着色器中的入口位置
         GLint posLoc = glGetAttribLocation(shaderProgram, "pos");
         GLint normalLoc = glGetAttribLocation(shaderProgram, "normal");
+        GLint texCoordLoc = glGetAttribLocation(shaderProgram, "texCoord");
 
 
         // 安全检查：如果名字拼错或者着色器里没用到该变量，OpenGL 会返回 -1
@@ -319,6 +372,11 @@
             glBindBuffer(GL_ARRAY_BUFFER, VBO[1]);
             glVertexAttribPointer(normalLoc, 3, GL_FLOAT, GL_FALSE, 0, (GLvoid*)0);
             glEnableVertexAttribArray(normalLoc); // 激活 location = normalLoc 的顶点属性 
+        }
+        if (texCoordLoc != -1) {
+            glBindBuffer(GL_ARRAY_BUFFER, VBO[2]);
+            glVertexAttribPointer(texCoordLoc, 2, GL_FLOAT, GL_FALSE, 0, (GLvoid*)0);
+            glEnableVertexAttribArray(texCoordLoc);
         }
    
         // 解绑（非必须，为了保持状态机干净）
@@ -383,6 +441,24 @@
             glUniformMatrix4fv(mvLocation, 1, GL_FALSE, &mv.cell[0]);
             glUniform3f(lightPosLocation, lightPosView.x, lightPosView.y, lightPosView.z);
 
+            if (diffTexID != 0) {
+                glActiveTexture(GL_TEXTURE0);
+                glBindTexture(GL_TEXTURE_2D, diffTexID);
+                glUniform1i(glGetUniformLocation(shaderProgram, "texDiffuse"), 0);
+                glUniform1i(glGetUniformLocation(shaderProgram, "hasDiffuseMap"), 1);
+            } else {
+                glUniform1i(glGetUniformLocation(shaderProgram, "hasDiffuseMap"), 0);
+            }
+
+            if (specTexID != 0) {
+                glActiveTexture(GL_TEXTURE1);
+                glBindTexture(GL_TEXTURE_2D, specTexID);
+                glUniform1i(glGetUniformLocation(shaderProgram, "texSpecular"), 1);
+                glUniform1i(glGetUniformLocation(shaderProgram, "hasSpecularMap"), 1);
+            } else {
+                glUniform1i(glGetUniformLocation(shaderProgram, "hasSpecularMap"), 0);
+            }
+
             // 执行绘制
             glBindVertexArray(VAO);                 // 绑定 VAO，自动恢复之前配置的所有 VBO 映射
             glDrawArrays(GL_TRIANGLES, 0, vertices.size());       // 绘制图元：类型为三角形，从第0个顶点开始，绘制?个顶点
@@ -398,8 +474,10 @@
         // =======
         // 清理资源
         // =======
+        if (diffTexID) glDeleteTextures(1, &diffTexID);
+        if (specTexID) glDeleteTextures(1, &specTexID);
         glDeleteVertexArrays(1, &VAO);
-        glDeleteBuffers(1, VBO);
+        glDeleteBuffers(3, VBO);
         glDeleteProgram(shaderProgram);
 
         glfwTerminate();

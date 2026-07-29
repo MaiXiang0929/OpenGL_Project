@@ -15,6 +15,7 @@ include_directories(
 
 add_executable(OpenGL_Project
     src/main.cpp
+    src/lodepng.cpp
     libs/glad/src/glad.c
  "src/shader.h" "src/LightGizmo.cpp" "src/LightGizmo.h")
 
