@@ -32,30 +32,76 @@
         return m;
     }
 
+    /// <summary>
+    /// 获取文件路径中的目录部分
+    /// </summary>
+    /// <param name="filePath">完整的文件路径</param>
+    /// <returns>包含末尾斜杠的文件夹路径字符串</returns>
     std::string GetDirectoryPath(const std::string& filePath) {
+        // find_last_of：在字符串中从后往前查找 '/' 或 '\'（兼容 Linux/Mac 和 Windows 路径分隔符）
+        // pos 记录找到的最靠后的斜杠下标
         size_t pos = filePath.find_last_of("/\\");
+
+        // 三目运算符：
+        // 如果 pos 等于 std::string::npos（表示没找到任何斜杠，即文件在当前目录）：返回空字符串 ""
+        // 否则：截取从索引 0 开始、长度为 pos + 1 的子字符串（包含斜杠本身）
         return (pos == std::string::npos) ? "" : filePath.substr(0, pos + 1);
     }
 
+    // 传入 PNG 图片的路径，成功则返回 OpenGL 纹理句柄（ID），失败返回 0
     GLuint LoadTexturePNG(const std::string& filePath) {
-        std::vector<unsigned char> image;
-        unsigned width, height;
+        // 1. 准备接收解压后数据的容器与变量
+        std::vector<unsigned char> image; // 存放解压后的 RGBA 原始字节数组（每一个像素占 4 个字节：R, G, B, A）
+        unsigned width, height;           // 接收图片的宽高（单位：像素）
+
+        // 2. 调用 LodePNG 库进行解码
+        // 将 filePath 的 PNG 文件解压，数据填入 image，宽高写入 width 和 height
         unsigned error = lodepng::decode(image, width, height, filePath);
+
+        // 3. 错误处理
         if (error) {
+            // error 不为 0 说明解码失败（如文件不存在、损坏、非 PNG 格式等）
             std::cerr << "[LodePNG Error] " << lodepng_error_text(error) << " File: " << filePath << std::endl;
-            return 0;
+            return 0; // 0 在 OpenGL 中代表无效的纹理句柄
         }
 
+        // 4. 在 OpenGL 中创建纹理对象
         GLuint textureID;
-        glGenTextures(1, &textureID);
-        glBindTexture(GL_TEXTURE_2D, textureID);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, image.data());
+        glGenTextures(1, &textureID);             // 向 OpenGL 申请生成 1 个纹理 ID
+        glBindTexture(GL_TEXTURE_2D, textureID);  // 将该 ID 绑定到 2D 纹理目标上，后续的纹理配置都会作用于它
+
+        // 5. 将内存中的像素数据上传至显卡（GPU）
+        glTexImage2D(
+            GL_TEXTURE_2D,      // 纹理目标类型：2D 纹理
+            0,                  // Mipmap 基本层级（0 表示主图）
+            GL_RGBA,            // 显卡内部存储格式：RGBA
+            width, height,      // 图像的像素宽高
+            0,                  // 历史遗留边框参数，必须为 0
+            GL_RGBA,            // 传入的源数据格式：RGBA
+            GL_UNSIGNED_BYTE,   // 像素数据类型：无符号字节 (0-255)
+            image.data()        // 存储像素字节数组的内存首地址指针
+        );
+
+        // 6. 自动生成 Mipmap（多级渐远纹理）
+        // 为当前纹理自动生成不同分辨率的缩小版，提高物体远距离观察时的渲染性能和消除锯齿
         glGenerateMipmap(GL_TEXTURE_2D);
+
+        // 7. 配置纹理采样的环绕模式（Wrap Mode）
+        // S 轴（即 U 轴/水平方向）：超出 [0.0, 1.0] 范围时重复平铺
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        // T 轴（即 V 轴/垂直方向）：超出 [0.0, 1.0] 范围时重复平铺
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+
+        // 8. 配置纹理采样的过滤模式（Filter Mode）
+        // 缩小过滤（Min Filter）：当纹理在屏幕上被缩小显示时，采用双线性插值结合 Mipmap 进行平滑采样
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        // 放大过滤（Mag Filter）：当纹理被放大拉伸显示时，采用双线性插值（Linear）保持平滑不出现马赛克
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+        // 9. 解绑纹理（良好的习惯，防止后续代码意外修改此纹理的状态）
         glBindTexture(GL_TEXTURE_2D, 0);
+
+        // 10. 返回准备就绪的纹理句柄
         return textureID;
     }
 
