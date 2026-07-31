@@ -11,11 +11,12 @@ include_directories(
     libs/glfw/include
     libs/glad/include
     libs/cyCodeBase
+    libs/lodepng
 )
 
 add_executable(OpenGL_Project
     src/main.cpp
-    src/lodepng.cpp
+    libs/lodepng/lodepng.cpp
     libs/glad/src/glad.c
  "src/shader.h" "src/LightGizmo.cpp" "src/LightGizmo.h")
 
