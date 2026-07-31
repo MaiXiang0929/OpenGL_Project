@@ -8,20 +8,20 @@ set(CMAKE_CXX_STANDARD 17)
 add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
 
 include_directories(
-    libs/glfw/include
-    libs/glad/include
-    libs/cyCodeBase
-    libs/lodepng
+    ThirdParty/glfw/include
+    ThirdParty/glad/include
+    ThirdParty/cyCodeBase
+    ThirdParty/lodepng
 )
 
 add_executable(OpenGL_Project
     src/main.cpp
-    libs/lodepng/lodepng.cpp
-    libs/glad/src/glad.c
+    ThirdParty/lodepng/lodepng.cpp
+    ThirdParty/glad/src/glad.c
  "src/shader.h" "src/LightGizmo.cpp" "src/LightGizmo.h")
 
 # GLFW库路径（注意版本可能不同）
-set(GLFW_LIB ${CMAKE_SOURCE_DIR}/libs/glfw/lib-vc2022/glfw3.lib)
+set(GLFW_LIB ${CMAKE_SOURCE_DIR}/ThirdParty/glfw/lib-vc2022/glfw3.lib)
 
 target_link_libraries(OpenGL_Project
     ${GLFW_LIB}
