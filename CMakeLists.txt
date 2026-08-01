@@ -2,35 +2,144 @@ cmake_minimum_required(VERSION 3.15)
 
 project(OpenGL_Project)
 
+# ============================
+# C++ 标准
+# ============================
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# 强制 MSVC 编译器使用 UTF-8 编码读取源文件
-add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
 
-include_directories(
-    ThirdParty/glfw/include
-    ThirdParty/glad/include
-    ThirdParty/cyCodeBase
-    ThirdParty/lodepng
+# MSVC 使用 UTF-8 编码
+add_compile_options(
+    "$<$<CXX_COMPILER_ID:MSVC>:/utf-8>"
 )
 
-add_executable(OpenGL_Project
+# ============================
+# 目录定义
+# ============================
+set(PROJECT_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
+
+set(SRC_DIR
+    ${PROJECT_ROOT}/src
+)
+
+set(THIRD_PARTY_DIR
+    ${PROJECT_ROOT}/ThirdParty
+)
+
+set(ASSET_DIR
+    ${PROJECT_ROOT}/assets
+)
+
+# ============================
+# Source Files
+# ============================
+
+set(SOURCES
+
+    # 程序入口
     src/main.cpp
-    ThirdParty/lodepng/lodepng.cpp
+
+    # Core
+    src/Core/Application.cpp
+    src/Core/Camera.cpp
+
+    # Renderer
+    src/Renderer/Renderer.cpp
+
+    # Editor
+    src/Editor/LightGizmo.cpp
+
+    # GLAD
     ThirdParty/glad/src/glad.c
- "src/shader.h" "src/LightGizmo.cpp" "src/LightGizmo.h")
 
-# GLFW库路径（注意版本可能不同）
-set(GLFW_LIB ${CMAKE_SOURCE_DIR}/ThirdParty/glfw/lib-vc2022/glfw3.lib)
-
-target_link_libraries(OpenGL_Project
-    ${GLFW_LIB}
-    opengl32
+    # LodePNG
+    ThirdParty/lodepng/lodepng.cpp
 )
 
-# 编译后自动将源码目录下的 assets 文件夹拷贝到可执行文件输出目录
-add_custom_command(TARGET OpenGL_Project POST_BUILD
+# ============================
+# 创建可执行文件
+# ============================
+add_executable(
+    ${PROJECT_NAME}
+    ${SOURCES}
+)
+
+# ============================
+# Include Path
+# ============================
+target_include_directories(
+    ${PROJECT_NAME}
+
+    PRIVATE
+
+    # src
+    ${SRC_DIR}
+
+    # Core
+    ${SRC_DIR}/Core
+
+    # Renderer
+    ${SRC_DIR}/Renderer
+
+    # Editor
+    ${SRC_DIR}/Editor
+
+    # GLAD
+    ${THIRD_PARTY_DIR}/glad/include
+
+    # GLFW
+    ${THIRD_PARTY_DIR}/glfw/include
+
+    # cyCodeBase
+    ${THIRD_PARTY_DIR}/cyCodeBase
+
+    # LodePNG
+    ${THIRD_PARTY_DIR}/lodepng
+)
+
+# ============================
+# GLFW
+# ============================
+target_link_directories(
+    ${PROJECT_NAME}
+
+    PRIVATE
+
+    ${THIRD_PARTY_DIR}/glfw/lib-vc2022
+)
+
+target_link_libraries(
+    ${PROJECT_NAME}
+
+    PRIVATE
+
+    glfw3.lib
+
+    opengl32.lib
+)
+
+# ============================
+# Copy Assets
+# ============================
+add_custom_command(
+    TARGET ${PROJECT_NAME}
+    POST_BUILD
+
     COMMAND ${CMAKE_COMMAND} -E copy_directory
-    ${CMAKE_CURRENT_SOURCE_DIR}/assets
-    $<TARGET_FILE_DIR:OpenGL_Project>/assets
+
+    ${ASSET_DIR}
+
+    $<TARGET_FILE_DIR:${PROJECT_NAME}>/assets
+)
+
+# ============================
+# Visual Studio 文件结构
+# ============================
+source_group(
+    TREE ${PROJECT_ROOT}
+
+    FILES
+
+    ${SOURCES}
 )

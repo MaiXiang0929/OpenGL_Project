@@ -1,3 +1,11 @@
+// SPDX-License-Identifier: MIT
+/// @file LightGizmo.cpp
+/// @brief 光源 Gizmo 的实现文件
+/// @details 该文件实现了 LightGizmo 类的核心功能，包括初始化、渲染循环、资源管理等。
+/// @author MaiX
+/// @date 2026-08-01
+
+
 #include "LightGizmo.h"
 #include <fstream>
 #include <sstream>

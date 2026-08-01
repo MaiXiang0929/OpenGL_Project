@@ -1,3 +1,11 @@
+// SPDX-License-Identifier: MIT
+/// @file LightGizmo.h
+/// @brief 光源 Gizmo 的头文件
+/// @details 该文件声明了 LightGizmo 类，用于实现光源的可视化 Gizmo 功能。
+/// @author MaiX
+/// @date 2026-08-01
+
+
 #pragma once
 
 #include <glad/glad.h>
