@@ -17,8 +17,13 @@
 
 /// @brief 构造函数
 Application::Application()
+    :
+    m_Camera(
+        cy::Vec3f(0, 0, 0),
+        50.0f
+    )
 {
-
+    
 }
 
 /// @brief 析构函数，自动调用 Shutdown 释放资源
@@ -78,6 +83,9 @@ bool Application::Init() {
     }
 
 	glfwMakeContextCurrent(m_Window);   // 将窗口的上下文设置为当前线程的上下文
+
+
+
     // 将当前的 Application 实例指针绑定到 GLFW 窗口上
     glfwSetWindowUserPointer(m_Window, this);
 
@@ -97,6 +105,10 @@ bool Application::Init() {
 
         return false;
     }
+
+    m_Camera.SetAspectRatio(
+        (float)m_Width / (float)m_Height
+    );
 
     std::cout << "[System] Engine Initialized Successfully! " << std::endl;
 
@@ -172,23 +184,9 @@ void Application::Update() {
 void Application::Render() {
 	m_Renderer->BeginFrame();
 
-    // 1. 计算坐标空间变换矩阵 (MVP)
-    float aspect = (float)m_Width / (float)m_Height;
-    cy::Matrix4f projMatrix;
-
-    if (m_IsPerspective) {
-        projMatrix.SetPerspective(45.0f * (3.14159f / 180.0f), aspect, 0.1f, 1000.0f);
-    }
-    else {
-        float fovY = 45.0f * (3.14159f / 180.0f);
-        float halfHeight = m_CameraDistance * tan(fovY / 2.0f);
-        float halfWidth = halfHeight * aspect;
-        projMatrix = OrthoMatrix(-halfWidth, halfWidth, -halfHeight, halfHeight, 0.1f, 1000.0f);
-    }
-
-    cy::Matrix4f viewMatrix = cy::Matrix4f::Translation(cy::Vec3f(0, 0, -m_CameraDistance));
-    cy::Matrix4f modelMatrix = cy::Matrix4f::RotationX(m_RotX) * cy::Matrix4f::RotationY(m_RotY);
-    modelMatrix *= cy::Matrix4f::Translation(-m_ObjCenter);
+	cy::Matrix4f projMatrix = m_Camera.GetProjectionMatrix();
+	cy::Matrix4f viewMatrix = m_Camera.GetViewMatrix();
+    cy::Matrix4f modelMatrix = cy::Matrix4f::Translation(-m_ObjCenter);
 
     cy::Matrix4f mv = viewMatrix * modelMatrix;
     cy::Matrix4f mvp = projMatrix * viewMatrix * modelMatrix;
@@ -196,7 +194,7 @@ void Application::Render() {
     // 光源计算
     cy::Vec3f lightBasePos(0.0f, 10.0f, 20.0f);
     // 通过 lightRot 变量将光源绕物体中心旋转
-    cy::Matrix4f lightRotMatrix = cy::Matrix4f::RotationX(m_lightRotX) * cy::Matrix4f::RotationY(m_lightRotY);
+    cy::Matrix4f lightRotMatrix = cy::Matrix4f::RotationX(m_LightRotX) * cy::Matrix4f::RotationY(m_LightRotY);
     cy::Vec4f lightPosWorld = lightRotMatrix * cy::Vec4f(lightBasePos.x, lightBasePos.y, lightBasePos.z, 1.0f);
     // 统一转换到 View Space，以便在着色器中进行光照计算
     cy::Vec4f lightPosView = viewMatrix * lightPosWorld;
@@ -238,20 +236,6 @@ void Application::Shutdown() {
 	std::cout << "[System] Engine Shutdown Successfully!" << std::endl;
 }
 
-// --- 正交投影矩阵构建函数 ---
-cy::Matrix4f Application::OrthoMatrix(float left, float right, float bottom, float top, float nearVal, float farVal) {
-    cy::Matrix4f m;
-    m.Zero();
-    m.cell[0] = 2.0f / (right - left);
-    m.cell[5] = 2.0f / (top - bottom);
-    m.cell[10] = -2.0f / (farVal - nearVal);
-    m.cell[12] = -(right + left) / (right - left);
-    m.cell[13] = -(top + bottom) / (top - bottom);
-    m.cell[14] = -(farVal + nearVal) / (farVal - nearVal);
-    m.cell[15] = 1.0f;
-    return m;
-}
-
 // ==========================================
 // 静态回调函数实现（使用 UserPointer 访问实例）
 // ==========================================
@@ -260,6 +244,11 @@ void Application::FramebufferSizeCallback(GLFWwindow* window, int width, int hei
     if (app) {
         app->m_Width = width;
         app->m_Height = height;
+
+        app->m_Camera.SetAspectRatio(
+            (float)width / (float)height
+        );
+
         glViewport(0, 0, width, height);
     }
 }
@@ -283,25 +272,23 @@ void Application::CursorPositionCallback(GLFWwindow* window, double xpos, double
     app->m_LastX = xpos;
     app->m_LastY = ypos;
 
-    app->m_ctrlDown = (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
+    app->m_CtrlDown = (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
         glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS);
 
     // 左键旋转
     if (app->m_LeftDown) {
-        if (app->m_ctrlDown) {
-            app->m_lightRotX += (float)dx * 0.01f;
-            app->m_lightRotY += (float)dy * 0.01f;
+        if (app->m_CtrlDown) {
+            app->m_LightRotX += (float)dx * 0.01f;
+            app->m_LightRotY += (float)dy * 0.01f;
         }else {
-            app->m_RotX += (float)dy * 0.01f;
-            app->m_RotY += (float)dx * 0.01f;
+            app->m_Camera.ProcessMouseOrbit(dx, dy);
         }
 
     }
 
     // 右键缩放
     if (app->m_RightDown) {
-        app->m_CameraDistance += (float)dy * 0.1f;
-        if (app->m_CameraDistance < 0.1f) app->m_CameraDistance = 0.1f;
+		app->m_Camera.ProcessMouseZoom(dy);
     }
 }
 
@@ -314,7 +301,7 @@ void Application::KeyCallback(GLFWwindow* window, int key, int scancode, int act
 
     // 投影模式切换（P）
     if (key == GLFW_KEY_P && action == GLFW_PRESS) {
-        app->m_IsPerspective = !app->m_IsPerspective;
+        app->m_Camera.ToggleProjectionMode();
     }
 
     // --- L 键切换光源 Gizmo 显示 ---
