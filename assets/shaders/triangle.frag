@@ -1,3 +1,5 @@
+// 片段着色器（Fragment Shader）
+
 #version 330 core
 
 in vec3 fragPos;

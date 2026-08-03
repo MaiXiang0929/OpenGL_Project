@@ -46,6 +46,8 @@ set(SOURCES
 
     # Renderer
     src/Renderer/Renderer.cpp
+    src/Renderer/Shader.cpp
+    src/Renderer/Mesh.cpp
 
     # Editor
     src/Editor/LightGizmo.cpp
@@ -63,7 +65,7 @@ set(SOURCES
 add_executable(
     ${PROJECT_NAME}
     ${SOURCES}
-)
+ )
 
 # ============================
 # Include Path

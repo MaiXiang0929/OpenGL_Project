@@ -17,6 +17,10 @@ public:
     LightGizmo();
     ~LightGizmo();
 
+	// 禁止复制
+    LightGizmo(const LightGizmo&) = delete;
+    LightGizmo& operator=(const LightGizmo&) = delete;
+
     // 初始化：加载着色器并构建面片 VAO/VBO
     void Init(const std::string& vertPath, const std::string& fragPath);
 

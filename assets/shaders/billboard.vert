@@ -1,3 +1,5 @@
+// 顶点着色器，用于渲染始终面向相机的图标（billboard）
+
 #version 330 core
 layout (location = 0) in vec3 pos;
 layout (location = 1) in vec2 texCoord;

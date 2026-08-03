@@ -1,3 +1,11 @@
+// SPDX-License-Identifier: MIT
+/// @file Camera.h
+/// @brief 摄像机类的头文件
+/// @details 该文件声明了 Camera 类的核心功能，包括视图矩阵和投影矩阵的计算，以及鼠标交互处理。
+/// @author MaiX
+/// @date 2026-08-02
+
+
 #pragma once
 
 #include "cyMatrix.h"

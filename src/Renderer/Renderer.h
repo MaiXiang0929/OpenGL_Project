@@ -15,6 +15,7 @@
 #include "cyTriMesh.h"
 #include "cyMatrix.h"
 
+#include "Shader.h"
 #include "Editor/LightGizmo.h"
 
 class Renderer
@@ -26,6 +27,10 @@ public:
 	/// @brief 析构函数，释放 OpenGL 资源
     ~Renderer();
 
+	// 禁止复制
+    Renderer(const Renderer&) = delete;
+    Renderer& operator=(const Renderer&) = delete;
+
 	/// @brief 初始化 Renderer
     void Init();
 
@@ -36,7 +41,11 @@ public:
     /// @param mvp 
     /// @param mv 
     /// @param lightPosView 
-    void RenderScene(const cy::Matrix4f& mvp, const cy::Matrix4f& mv, const cy::Vec3f& lightPosView);
+    void RenderScene(
+        const cy::Matrix4f& mvp,
+        const cy::Matrix4f& mv,
+        const cy::Vec3f& lightPosView
+    );
 
 	/// @brief 结束一帧渲染
     void EndFrame();
@@ -52,39 +61,45 @@ public:
     );
 
     // --- 新增：暴露给外部的纹理加载接口 ---
-    void LoadTextures(const std::string& diffusePath, const std::string& specularPath);
+    void LoadTextures(
+        const std::string& diffusePath,
+        const std::string& specularPath
+    );
 
     // --- 新增：重新加载着色器的接口 ---
     void ReloadShaders();
 
     // --- 修改：适配你 LightGizmo API 的绘制接口 ---
-    void DrawLightGizmo(const cy::Matrix4f& proj, const cy::Matrix4f& view, const cy::Vec3f& lightWorldPos, float scale);
-
-private:
-
-    GLuint m_ShaderProgram      = 0;
-
-    GLuint m_VAO                = 0;
-    GLuint m_VBO[3]{};
-
-
-    GLuint m_DiffuseTexture     = 0;
-    GLuint m_SpecularTexture    = 0;
-
-    int m_VertexCount           = 0;
-
-    // --- 新增：LightGizmo 实例 ---
-    LightGizmo m_LightGizmo;
-
-
-private:
-
-    void CompileShaders();
-
-    std::string ReadFile(
-        const std::string& path
+    void DrawLightGizmo(
+        const cy::Matrix4f& proj,
+        const cy::Matrix4f& view,
+        const cy::Vec3f& lightWorldPos,
+        float scale
     );
 
+private:
+
+    // Shader
+    Shader m_MainShader;
+
+    // Editor Debug
+    LightGizmo m_LightGizmo;
+
+    // Mesh GPU Resource
+    GLuint m_VAO = 0;
+    GLuint m_VBO[3]{};
+
+    // Texture GPU Resource
+    GLuint m_DiffuseTexture = 0;
+    GLuint m_SpecularTexture = 0;
+
+    // Mesh Info
+    int m_VertexCount = 0;
+
+private:
+
     // 内部 PNG 加载逻辑
-    GLuint LoadTexturePNG(const std::string& filePath);
+    GLuint LoadTexturePNG(
+        const std::string& filePath
+    );
 };

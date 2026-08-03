@@ -1,3 +1,11 @@
+// SPDX-License-Identifier: MIT
+/// @file Camera.cpp
+/// @brief 摄像机类的实现文件
+/// @details 该文件实现了 Camera 类的核心功能，包括视图矩阵和投影矩阵的计算，以及鼠标交互处理。
+/// @author MaiX
+/// @date 2026-08-02
+
+
 #include "Camera.h"
 
 #include <cmath>

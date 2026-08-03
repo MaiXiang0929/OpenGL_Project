@@ -27,6 +27,10 @@ public:
 	/// @brief 析构函数，自动调用 Shutdown 释放资源
     ~Application();
 
+	// 禁止复制
+    Application(const Application&) = delete;
+    Application& operator=(const Application&) = delete;
+
 	/// @brief 运行应用程序
     void Run();
 

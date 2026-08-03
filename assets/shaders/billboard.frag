@@ -1,3 +1,5 @@
+// 片段着色器，用于渲染一个圆形的黄色 billboard
+
 #version 330 core
 in vec2 TexCoord;
 out vec4 color;

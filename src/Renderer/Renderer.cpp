@@ -13,17 +13,13 @@
 
 #include "lodepng.h"
 
-/*
-* @brief 构造函数，初始化成员变量默认值
-*/
+/// @brief 构造函数
 Renderer::Renderer()
 {
     
 }
 
-/*
-* @brief 析构函数，释放 OpenGL 资源
-*/
+/// @brief 析构函数，释放 OpenGL 资源
 Renderer::~Renderer()
 {
 	// 删除纹理对象
@@ -34,73 +30,85 @@ Renderer::~Renderer()
     glDeleteBuffers(3, m_VBO);
     glDeleteVertexArrays(1, &m_VAO);
 
-	// 删除着色器程序
-    glDeleteProgram(m_ShaderProgram);
 }
 
-/*
-* @brief 初始化 Renderer
-*/
+/// @brief 初始化 Renderer
 void Renderer::Init()
 {
     // 开启深度测试
     glEnable(GL_DEPTH_TEST);
 
 	// 编译着色器程序
-	CompileShaders();
+    m_MainShader.Load(
+        "assets/shaders/triangle.vert",
+        "assets/shaders/triangle.frag"
+    );
 
-    // --- 新增：初始化 Gizmo ---
-    // 注意：请确保 "assets/shaders/billboard.vert/frag" 路径下有你对应的着色器文件！
-    m_LightGizmo.Init("assets/shaders/billboard.vert", "assets/shaders/billboard.frag");
+    // 初始化 Gizmo
+    m_LightGizmo.Init(
+        "assets/shaders/billboard.vert",
+        "assets/shaders/billboard.frag"
+    );
 
     
 }
 
-/*
-* @brief 开始一帧渲染
-*/
+/// @brief 开始一帧渲染
 void Renderer::BeginFrame()
 {
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // 清除颜色与深度缓冲
 }
 
-/*
-* @brief 渲染场景
-*/
+/// @brief 渲染场景
+/// @param mvp 
+/// @param mv 
+/// @param lightPosView 
 void Renderer::RenderScene(const cy::Matrix4f& mvp, const cy::Matrix4f& mv, const cy::Vec3f& lightPosView)
 {
 	// 使用着色器程序
-    glUseProgram(m_ShaderProgram);
+	m_MainShader.Bind();
 
-    // 1. 传递矩阵与光照 Uniform
-    int mvpLoc = glGetUniformLocation(m_ShaderProgram, "mvp");
-    int mvLoc = glGetUniformLocation(m_ShaderProgram, "mv");
-    int lightPosLoc = glGetUniformLocation(m_ShaderProgram, "lightPos");
+    // 传递矩阵与光照 Uniform
+    m_MainShader.SetMatrix4(
+        "mvp",
+        &mvp.cell[0]
+    );
 
-    glUniformMatrix4fv(mvpLoc, 1, GL_FALSE, &mvp.cell[0]);
-    glUniformMatrix4fv(mvLoc, 1, GL_FALSE, &mv.cell[0]);
-    glUniform3f(lightPosLoc, lightPosView.x, lightPosView.y, lightPosView.z);
+    m_MainShader.SetMatrix4(
+        "mv",
+        &mv.cell[0]
+    );
+
+    m_MainShader.SetVec3(
+        "lightPos",
+        lightPosView.x,
+        lightPosView.y,
+        lightPosView.z
+    );
+
 
     // 2. 绑定纹理并传递标志位
     if (m_DiffuseTexture != 0) {
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, m_DiffuseTexture);
-        glUniform1i(glGetUniformLocation(m_ShaderProgram, "texDiffuse"), 0);
-        glUniform1i(glGetUniformLocation(m_ShaderProgram, "hasDiffuseMap"), 1);
+
+        m_MainShader.SetInt("texDiffuse", 0);
+
+        m_MainShader.SetInt("hasDiffuseMap", 1);
     }
     else {
-        glUniform1i(glGetUniformLocation(m_ShaderProgram, "hasDiffuseMap"), 0);
+        m_MainShader.SetInt("hasDiffuseMap", 0);
     }
 
     if (m_SpecularTexture != 0) {
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_2D, m_SpecularTexture);
-        glUniform1i(glGetUniformLocation(m_ShaderProgram, "texSpecular"), 1);
-        glUniform1i(glGetUniformLocation(m_ShaderProgram, "hasSpecularMap"), 1);
+        m_MainShader.SetInt("texSpecular", 1);
+        m_MainShader.SetInt("hasSpecularMap", 1);
     }
     else {
-        glUniform1i(glGetUniformLocation(m_ShaderProgram, "hasSpecularMap"), 0);
+        m_MainShader.SetInt("hasSpecularMap", 0);
     }
 
 	// 绑定 VAO
@@ -114,17 +122,16 @@ void Renderer::RenderScene(const cy::Matrix4f& mvp, const cy::Matrix4f& mv, cons
     );
 }
 
-/*
-* @brief 结束一帧渲染
-*/
+/// @brief 结束一帧渲染
 void Renderer::EndFrame()
 {
 
 }
 
-/*
-* @brief 上传模型数据到GPU
-*/
+/// @brief 上传模型数据到GPU
+/// @param vertices 
+/// @param normals 
+/// @param texCoords 
 void Renderer::SetMesh(
     const std::vector<cy::Vec3f>& vertices,
     const std::vector<cy::Vec3f>& normals,
@@ -176,17 +183,17 @@ void Renderer::SetMesh(
     // 动态获取顶点属性在着色器中的入口位置
     GLint posLoc =
         glGetAttribLocation(
-            m_ShaderProgram,
+            m_MainShader.GetProgramID(),
             "pos"
         );
     GLint normalLoc =
         glGetAttribLocation(
-            m_ShaderProgram,
+            m_MainShader.GetProgramID(),
             "normal"
         );
     GLint texLoc =
         glGetAttribLocation(
-            m_ShaderProgram,
+            m_MainShader.GetProgramID(),
             "texCoord"
         );
 
@@ -272,60 +279,8 @@ void Renderer::SetMesh(
             );
 }
 
-/*
-* @brief 从文件中读取内容
-*/
-std::string Renderer::ReadFile(
-    const std::string& path
-)
-{
-    std::ifstream file(path);
 
-    if (!file.is_open())
-    {
-        std::cerr
-            << "[Shader File Error] Cannot read: "
-            << path
-            << std::endl;
 
-        return "";
-    }
-
-    std::stringstream ss;
-    ss << file.rdbuf();
-
-    return ss.str();
-}
-
-void Renderer::CompileShaders()
-{
-    if (m_ShaderProgram != 0) glDeleteProgram(m_ShaderProgram); // 删除旧的着色器程序
-
-    // 编译顶点着色器
-    std::string vertexCodeStr = ReadFile("assets/shaders/triangle.vert");
-    const char* vsSource = vertexCodeStr.c_str();
-    GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertexShader, 1, &vsSource, nullptr);
-    glCompileShader(vertexShader);
-
-    // 编译片元着色器
-    std::string fragmentCodeStr = ReadFile("assets/shaders/triangle.frag");
-    const char* fsSource = fragmentCodeStr.c_str();
-    GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragmentShader, 1, &fsSource, nullptr);
-    glCompileShader(fragmentShader);
-
-    // 链接着色器程序 (Program) 将顶点与片元组合在一起
-    m_ShaderProgram = glCreateProgram();
-    glAttachShader(m_ShaderProgram, vertexShader); // attach 顶点着色器
-    glAttachShader(m_ShaderProgram, fragmentShader); // attach 片元着色器
-    glLinkProgram(m_ShaderProgram);                  // link 整个程序
-
-    // 链接完成后，单独的着色器对象就可以释放了
-    glDeleteShader(vertexShader);
-    glDeleteShader(fragmentShader);
-    std::cout << "Shaders compiled successfully!" << std::endl;
-}
 
 // 内部 PNG 加载逻辑
 GLuint Renderer::LoadTexturePNG(const std::string& filePath) {
@@ -361,7 +316,11 @@ void Renderer::LoadTextures(const std::string& diffusePath, const std::string& s
 
 // --- 新增：重新加载着色器的接口 ---
 void Renderer::ReloadShaders() {
-    CompileShaders();
+    m_MainShader.Load(
+		"assets/shaders/triangle.vert",
+		"assets/shaders/triangle.frag"
+    );
+
     std::cout << "[Renderer] Shaders reloaded successfully!" << std::endl;
 }
 
