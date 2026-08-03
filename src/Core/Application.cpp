@@ -145,26 +145,28 @@ bool Application::Init() {
     mesh.ComputeNormals();
     m_ObjCenter = (mesh.GetBoundMax() + mesh.GetBoundMin()) * 0.5f;
 
-    std::vector<cy::Vec3f> vertices, normals;
-    std::vector<cy::Vec2f> texCoords;
+    std::vector<Vertex> vertices;
+    vertices.reserve(static_cast<size_t>(mesh.NF()) * 3);
     bool hasTexCoords = mesh.HasTextureVertices();
     for (int i = 0; i < mesh.NF(); ++i) {
         cy::TriMesh::TriFace face = mesh.F(i);
         cy::TriMesh::TriFace faceNormal = mesh.FN(i);
         cy::TriMesh::TriFace faceTex = hasTexCoords ? mesh.FT(i) : cy::TriMesh::TriFace();
         for (int j = 0; j < 3; ++j) {
-            vertices.push_back(mesh.V(face.v[j]));
-            normals.push_back(mesh.VN(faceNormal.v[j]));
+            Vertex vertex{};
+            vertex.Position = mesh.V(face.v[j]);
+            vertex.Normal = mesh.VN(faceNormal.v[j]);
             if (hasTexCoords) {
                 cy::Vec3f vt = mesh.VT(faceTex.v[j]);
-                texCoords.push_back(cy::Vec2f(vt.x, 1.0f - vt.y));
+                vertex.TexCoord = cy::Vec2f(vt.x, 1.0f - vt.y);
             }
             else {
-                texCoords.push_back(cy::Vec2f(0.0f, 0.0f));
+                vertex.TexCoord = cy::Vec2f(0.0f, 0.0f);
             }
+            vertices.push_back(vertex);
         }
     }
-    m_Renderer->SetMesh(vertices, normals, texCoords);
+    m_Renderer->SetMesh(vertices);
 
     // 加载纹理（硬编码路径测试）
     m_Renderer->LoadTextures("assets/models/brick.png", "assets/models/brick-specular.png");

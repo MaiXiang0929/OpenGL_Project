@@ -27,8 +27,6 @@ Renderer::~Renderer()
     if (m_SpecularTexture) glDeleteTextures(1, &m_SpecularTexture);
 
 	// 删除顶点缓冲对象和顶点数组对象
-    glDeleteBuffers(3, m_VBO);
-    glDeleteVertexArrays(1, &m_VAO);
 
 }
 
@@ -112,14 +110,8 @@ void Renderer::RenderScene(const cy::Matrix4f& mvp, const cy::Matrix4f& mv, cons
     }
 
 	// 绑定 VAO
-    glBindVertexArray(m_VAO);
-
 	// 绘制三角形
-    glDrawArrays(
-        GL_TRIANGLES,
-        0,
-        m_VertexCount
-    );
+    m_Mesh.Draw();
 }
 
 /// @brief 结束一帧渲染
@@ -132,6 +124,7 @@ void Renderer::EndFrame()
 /// @param vertices 
 /// @param normals 
 /// @param texCoords 
+#if 0
 void Renderer::SetMesh(
     const std::vector<cy::Vec3f>& vertices,
     const std::vector<cy::Vec3f>& normals,
@@ -283,6 +276,13 @@ void Renderer::SetMesh(
 
 
 // 内部 PNG 加载逻辑
+#endif
+
+void Renderer::SetMesh(const std::vector<Vertex>& vertices)
+{
+    m_Mesh.Upload(vertices);
+}
+
 GLuint Renderer::LoadTexturePNG(const std::string& filePath) {
     std::vector<unsigned char> image;
     unsigned width, height;

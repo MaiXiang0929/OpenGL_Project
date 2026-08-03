@@ -16,6 +16,7 @@
 #include "cyMatrix.h"
 
 #include "Shader.h"
+#include "Mesh.h"
 #include "Editor/LightGizmo.h"
 
 class Renderer
@@ -54,11 +55,7 @@ public:
 	/// @param vertices 顶点坐标
     /// @param normals 法线
     /// @param texCoords 纹理坐标
-    void SetMesh(
-        const std::vector<cy::Vec3f>& vertices,
-        const std::vector<cy::Vec3f>& normals,
-        const std::vector<cy::Vec2f>& texCoords
-    );
+    void SetMesh(const std::vector<Vertex>& vertices);
 
     // --- 新增：暴露给外部的纹理加载接口 ---
     void LoadTextures(
@@ -86,16 +83,13 @@ private:
     LightGizmo m_LightGizmo;
 
     // Mesh GPU Resource
-    GLuint m_VAO = 0;
-    GLuint m_VBO[3]{};
+    Mesh m_Mesh;
 
     // Texture GPU Resource
     GLuint m_DiffuseTexture = 0;
     GLuint m_SpecularTexture = 0;
 
     // Mesh Info
-    int m_VertexCount = 0;
-
 private:
 
     // 内部 PNG 加载逻辑
