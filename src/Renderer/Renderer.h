@@ -99,15 +99,27 @@ public:
     void LoadCubemap(const std::string& dirPath);
     void RenderSkybox(const cy::Matrix4f& projection, const cy::Matrix4f& view);
 
+    // --- 新增：反射 Pass 与地面平面接口 ---
+    void BeginReflectionPass();
+    void EndReflectionPass();
+    void RenderGroundPlane(
+        const cy::Matrix4f& mvp,
+        const cy::Matrix4f& model,
+        const cy::Matrix4f& reflectionVP,
+        const cy::Vec3f& cameraWorldPos
+    );
+
 private:
 
     // Shader
 	Shader m_MainShader;                ///< 物体渲染的主着色器
     Shader m_PlaneShader;               ///< 显示离屏纹理的平面着色器
     Shader m_SkyboxShader;              ///< 天空盒着色器
+    Shader m_GroundShader;              ///< 反射地面着色器
 
     // Framebuffer
     Framebuffer m_Framebuffer;
+    Framebuffer m_ReflectionFramebuffer; ///< 反射渲染目标（512×512）
 
     // Editor Debug
     LightGizmo m_LightGizmo;
@@ -116,6 +128,7 @@ private:
 	Mesh m_Mesh;                        ///< 物体模型网格
     Mesh m_PlaneMesh;                   ///< 由两个三角形组成的正方形平面
     Mesh m_SkyboxMesh;                  ///< 天空盒立方体网格
+    Mesh m_GroundPlaneMesh;             ///< 反射地面网格（XZ 平面四边形）
 
     // Texture GPU Resource
     GLuint m_DiffuseTexture = 0;

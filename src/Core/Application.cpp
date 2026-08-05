@@ -161,6 +161,9 @@ bool Application::Init() {
 
     // 根据包围盒自动调整观察距离，使不同尺寸的模型都能进入离屏画面。
     const float modelDiameter = (mesh.GetBoundMax() - mesh.GetBoundMin()).Length();
+    m_ModelDiameter = modelDiameter;
+    // 地面放在模型底部稍下方，避免与模型底部重叠
+    m_GroundY = mesh.GetBoundMin().y - modelDiameter * 0.02f;
     m_Camera.SetDistance(modelDiameter > 0.0f ? modelDiameter * 1.25f : 5.0f);
 
     std::vector<Vertex> vertices;
@@ -219,32 +222,71 @@ void Application::Update() {
 
 /// @brief 渲染应用程序
 void Application::Render() {
-	// 第一阶段：将带光照和材质的物体渲染到 FBO 的颜色纹理。
-	m_Renderer->BeginObjectPass();
-
-	cy::Matrix4f projMatrix = m_Camera.GetProjectionMatrix();
-	cy::Matrix4f viewMatrix = m_Camera.GetViewMatrix();
+    // 共用矩阵
+    cy::Matrix4f projMatrix = m_Camera.GetProjectionMatrix();
+    cy::Matrix4f viewMatrix = m_Camera.GetViewMatrix();
     cy::Matrix4f modelMatrix = cy::Matrix4f::Translation(-m_ObjCenter);
 
-    cy::Matrix4f mv = viewMatrix * modelMatrix;
-    cy::Matrix4f mvp = projMatrix * viewMatrix * modelMatrix;
-
-    // 绘制天空盒（必须在物体之前，使用 .xyww 技巧 + LEQUAL 深度测试）
-    m_Renderer->RenderSkybox(projMatrix, viewMatrix);
-
-    // 使用 Ctrl + 左键积累的旋转角，让光源绕模型中心运动。
+    // 光源世界位置
     const cy::Vec3f lightBasePos(0.0f, 10.0f, 20.0f);
     const cy::Matrix4f lightRotation =
         cy::Matrix4f::RotationX(m_LightRotX) *
         cy::Matrix4f::RotationY(m_LightRotY);
     const cy::Vec4f lightPosWorld = lightRotation *
         cy::Vec4f(lightBasePos.x, lightBasePos.y, lightBasePos.z, 1.0f);
+
+    // --- 反射 Pass：渲染到反射纹理 ---
+    cy::Matrix4f reflectMatrix =
+        cy::Matrix4f::Translation(cy::Vec3f(0.0f, m_GroundY, 0.0f)) *
+        cy::Matrix4f::Scale(1.0f, -1.0f, 1.0f) *
+        cy::Matrix4f::Translation(cy::Vec3f(0.0f, -m_GroundY, 0.0f));
+    cy::Matrix4f reflectView = viewMatrix * reflectMatrix;
+
+    m_Renderer->BeginReflectionPass();
+    m_Renderer->RenderSkybox(projMatrix, reflectView);
+    {
+        cy::Matrix4f rmvp = projMatrix * reflectView * modelMatrix;
+        cy::Matrix4f rmv = reflectView * modelMatrix;
+        cy::Vec4f rLight = reflectView * lightPosWorld;
+        m_Renderer->RenderScene(rmvp, rmv,
+            cy::Vec3f(rLight.x, rLight.y, rLight.z), reflectView);
+    }
+    m_Renderer->EndReflectionPass();
+
+    // --- 主物体 Pass：渲染到 FBO 颜色纹理 ---
+    m_Renderer->BeginObjectPass();
+
+    // 天空盒
+    m_Renderer->RenderSkybox(projMatrix, viewMatrix);
+
+    // 相机世界位置（用于地面着色器视线方向计算）
+    const float dist = m_Camera.GetPosition().z;
+    cy::Vec3f cameraWorldPos(
+        viewMatrix.cell[2] * dist,
+        viewMatrix.cell[6] * dist,
+        viewMatrix.cell[10] * dist
+    );
+
+    // 反射地面平面
+    {
+        const float groundSize = m_ModelDiameter * 2.0f;
+        cy::Matrix4f groundModel =
+            cy::Matrix4f::Translation(cy::Vec3f(
+                -m_ObjCenter.x, m_GroundY, -m_ObjCenter.z)) *
+            cy::Matrix4f::Scale(groundSize, 1.0f, groundSize);
+        cy::Matrix4f groundMvp = projMatrix * viewMatrix * groundModel;
+        cy::Matrix4f reflectionVP = projMatrix * reflectView;
+        m_Renderer->RenderGroundPlane(groundMvp, groundModel, reflectionVP, cameraWorldPos);
+    }
+
+    // 3D 物体（带环境反射的 Blinn-Phong）
+    cy::Matrix4f mv = viewMatrix * modelMatrix;
+    cy::Matrix4f mvp = projMatrix * viewMatrix * modelMatrix;
     cy::Vec4f lightPosView = viewMatrix * lightPosWorld;
+    m_Renderer->RenderScene(mvp, mv,
+        cy::Vec3f(lightPosView.x, lightPosView.y, lightPosView.z), viewMatrix);
 
-    // 2. 将数据提交给 Renderer
-    m_Renderer->RenderScene(mvp, mv, cy::Vec3f(lightPosView.x, lightPosView.y, lightPosView.z), viewMatrix);
-
-    // 光源图标也绘制到 FBO，使黄色圆圈成为最终平面纹理的一部分。
+    // 光源调试图标
     if (m_DrawDebugGizmos) {
         m_Renderer->DrawLightGizmo(
             projMatrix,
@@ -253,17 +295,15 @@ void Application::Render() {
             1.0f);
     }
 
-	m_Renderer->EndObjectPass();
+    m_Renderer->EndObjectPass();
 
-    // 第二阶段：回到默认帧缓冲，把第一阶段生成的纹理贴到方形平面上。
+    // --- 屏幕 Pass ---
     m_Renderer->BeginFrame(m_Width, m_Height);
-	const cy::Matrix4f planeMvp =
-		m_PlaneCamera.GetProjectionMatrix() * m_PlaneCamera.GetViewMatrix();
-	m_Renderer->RenderPlane(planeMvp);
-
-	m_Renderer->EndFrame();
+    const cy::Matrix4f planeMvp =
+        m_PlaneCamera.GetProjectionMatrix() * m_PlaneCamera.GetViewMatrix();
+    m_Renderer->RenderPlane(planeMvp);
+    m_Renderer->EndFrame();
 }
-
 /// @brief 关闭应用程序
 void Application::Shutdown() {
 	

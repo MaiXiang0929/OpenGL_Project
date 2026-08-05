@@ -100,8 +100,26 @@ void Renderer::Init()
         "assets/shaders/billboard.frag"
     );
 
+    // 加载地面着色器
+    m_GroundShader.Load(
+        "assets/shaders/ground.vert",
+        "assets/shaders/ground.frag"
+    );
+
+    // 地面平面：位于 XZ 平面（Y=0），由 model 矩阵定位到场景中
+    // 单位大小（-1 到 1），由 model 矩阵的 scale 控制实际大小
+    {
+        const std::vector<Vertex> groundVertices = {
+            {{-1.0f, 0.0f, -1.0f}, {0,1,0}, {0,0}}, {{ 1.0f, 0.0f, -1.0f}, {0,1,0}, {0,0}}, {{ 1.0f, 0.0f,  1.0f}, {0,1,0}, {0,0}},
+            {{-1.0f, 0.0f, -1.0f}, {0,1,0}, {0,0}}, {{ 1.0f, 0.0f,  1.0f}, {0,1,0}, {0,0}}, {{-1.0f, 0.0f,  1.0f}, {0,1,0}, {0,0}},
+        };
+        m_GroundPlaneMesh.Upload(groundVertices);
+    }
+
     // 初始化 1024x1024 分辨率的离屏缓冲
     m_Framebuffer.Init(1024, 1024);
+    // 初始化 512x512 分辨率的反射缓冲区
+    m_ReflectionFramebuffer.Init(512, 512);
 }
 
 /// @brief 开始一帧渲染
@@ -499,6 +517,49 @@ void Renderer::RenderSkybox(const cy::Matrix4f& projection, const cy::Matrix4f& 
     glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
 }
 
+// --- 新增：反射 Pass ---
+void Renderer::BeginReflectionPass() {
+    m_ReflectionFramebuffer.Bind();
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+}
+
+void Renderer::EndReflectionPass() {
+    m_ReflectionFramebuffer.Unbind();
+    m_ReflectionFramebuffer.GenerateMipmaps();
+}
+
+// --- 新增：渲染反射地面 ---
+void Renderer::RenderGroundPlane(
+    const cy::Matrix4f& mvp,
+    const cy::Matrix4f& model,
+    const cy::Matrix4f& reflectionVP,
+    const cy::Vec3f& cameraWorldPos)
+{
+    m_GroundShader.Bind();
+
+    m_GroundShader.SetMatrix4("mvp", &mvp.cell[0]);
+    m_GroundShader.SetMatrix4("model", &model.cell[0]);
+    m_GroundShader.SetMatrix4("reflectionVP", &reflectionVP.cell[0]);
+    m_GroundShader.SetVec3("cameraWorldPos",
+        cameraWorldPos.x, cameraWorldPos.y, cameraWorldPos.z);
+
+    // 绑定 cubemap 到纹理单元 0
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, m_CubemapTexture);
+    m_GroundShader.SetInt("cubemap", 0);
+
+    // 绑定反射纹理到纹理单元 1
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, m_ReflectionFramebuffer.GetColorTexture());
+    m_GroundShader.SetInt("reflectionTex", 1);
+
+    m_GroundPlaneMesh.Draw();
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
+}
+
 // --- 新增：重新加载着色器的接口 ---
 void Renderer::ReloadShaders() {
     const bool mainLoaded = m_MainShader.Load(
@@ -516,7 +577,12 @@ void Renderer::ReloadShaders() {
         "assets/shaders/skybox.frag"
     );
 
-    if (mainLoaded && planeLoaded && skyboxLoaded) {
+    const bool groundLoaded = m_GroundShader.Load(
+        "assets/shaders/ground.vert",
+        "assets/shaders/ground.frag"
+    );
+
+    if (mainLoaded && planeLoaded && skyboxLoaded && groundLoaded) {
         std::cout << "[Renderer] Shaders reloaded successfully!" << std::endl;
     }else {
         std::cerr << "[Renderer] One or more shaders failed to reload." << std::endl;

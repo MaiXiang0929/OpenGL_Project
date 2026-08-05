@@ -62,6 +62,8 @@ private:
     bool m_DrawDebugGizmos      = true;        ///< 是否绘制黄色光源位置图标
 
     cy::Vec3f m_ObjCenter;                     ///< 模型包围盒中心
+    float m_GroundY         = 0.0f;            ///< 反射地面 Y 坐标（模型包围盒底部）
+    float m_ModelDiameter   = 0.0f;            ///< 模型包围盒直径，用于缩放地面
 
 private:
     /// @brief 初始化应用程序
