@@ -38,7 +38,16 @@ public:
     void Init();
 
 	/// @brief 开始一帧渲染
-    void BeginFrame();
+	/// @details 该函数会设置视口大小，并为离屏渲染阶段做准备。
+	/// @param viewportWidth 当前视口宽度
+    /// @param viewportHeight 当前视口高度
+    void BeginFrame(unsigned int viewportWidth, unsigned int viewportHeight);
+
+    /// @brief 开始物体离屏渲染阶段
+    void BeginObjectPass();
+
+    /// @brief 结束物体离屏渲染阶段并更新颜色纹理的 MipMap
+    void EndObjectPass();
 
     /// @brief 渲染场景
     /// @param mvp 
@@ -49,6 +58,10 @@ public:
         const cy::Matrix4f& mv,
         const cy::Vec3f& lightPosView
     );
+
+    /// @brief 将离屏渲染纹理绘制到方形平面
+    /// @param mvp 平面的模型-观察-投影矩阵
+    void RenderPlane(const cy::Matrix4f& mvp);
 
 	/// @brief 结束一帧渲染
     void EndFrame();
@@ -84,7 +97,8 @@ public:
 private:
 
     // Shader
-    Shader m_MainShader;
+	Shader m_MainShader;                ///< 物体渲染的主着色器
+    Shader m_PlaneShader;               ///< 显示离屏纹理的平面着色器
 
     // Framebuffer
     Framebuffer m_Framebuffer;
@@ -93,7 +107,8 @@ private:
     LightGizmo m_LightGizmo;
 
     // Mesh GPU Resource
-    Mesh m_Mesh;
+	Mesh m_Mesh;                        ///< 物体模型网格
+    Mesh m_PlaneMesh;                   ///< 由两个三角形组成的正方形平面
 
     // Texture GPU Resource
     GLuint m_DiffuseTexture = 0;

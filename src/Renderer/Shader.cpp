@@ -75,7 +75,11 @@ bool Shader::Load(
 		char infoLog[512];
 		glGetProgramInfoLog(program, 512, nullptr, infoLog);
 		std::cerr << "[Shader Error] Linking failed: " << infoLog << std::endl;
+
+		// 链接失败时 program 不可用，两个独立 Shader 对象也不再需要。
 		glDeleteProgram(program);
+		glDeleteShader(vertexShader);
+		glDeleteShader(fragmentShader);
 
 		return false;
 	}
@@ -84,6 +88,11 @@ bool Shader::Load(
 
 	glDeleteShader(fragmentShader);
 
+	// 热重载成功后再删除旧程序，避免加载失败时丢失当前可用的着色器。
+	if (m_ProgramID != 0)
+	{
+		glDeleteProgram(m_ProgramID);
+	}
 	m_ProgramID = program;
 
 	return true;

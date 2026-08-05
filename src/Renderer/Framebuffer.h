@@ -32,6 +32,9 @@ public:
     /// @brief 解绑 FBO，恢复到默认屏幕缓冲区 (ID 0)
     void Unbind() const;
 
+    /// @brief 离屏渲染完成后，依据颜色附件的最新内容重新生成 MipMap
+    void GenerateMipmaps() const;
+
     /// @brief 获取生成的离屏颜色纹理 ID
     GLuint GetColorTexture() const { return m_ColorTexture; }
 

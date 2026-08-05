@@ -36,11 +36,27 @@ void Renderer::Init()
     // 开启深度测试
     glEnable(GL_DEPTH_TEST);
 
-	// 编译着色器程序
+	// 加载着色器
     m_MainShader.Load(
         "assets/shaders/triangle.vert",
         "assets/shaders/triangle.frag"
     );
+
+    m_PlaneShader.Load(
+        "assets/shaders/plane.vert",
+        "assets/shaders/plane.frag"
+    );
+
+    // 最终显示平面位于 XY 平面，由两个逆时针三角形组成，UV 覆盖完整离屏纹理。
+    const std::vector<Vertex> planeVertices = {
+        { cy::Vec3f(-1.0f, -1.0f, 0.0f), cy::Vec3f(0.0f, 0.0f, 1.0f), cy::Vec2f(0.0f, 0.0f) },
+        { cy::Vec3f( 1.0f, -1.0f, 0.0f), cy::Vec3f(0.0f, 0.0f, 1.0f), cy::Vec2f(1.0f, 0.0f) },
+        { cy::Vec3f( 1.0f,  1.0f, 0.0f), cy::Vec3f(0.0f, 0.0f, 1.0f), cy::Vec2f(1.0f, 1.0f) },
+        { cy::Vec3f(-1.0f, -1.0f, 0.0f), cy::Vec3f(0.0f, 0.0f, 1.0f), cy::Vec2f(0.0f, 0.0f) },
+        { cy::Vec3f( 1.0f,  1.0f, 0.0f), cy::Vec3f(0.0f, 0.0f, 1.0f), cy::Vec2f(1.0f, 1.0f) },
+        { cy::Vec3f(-1.0f,  1.0f, 0.0f), cy::Vec3f(0.0f, 0.0f, 1.0f), cy::Vec2f(0.0f, 1.0f) }
+    };
+    m_PlaneMesh.Upload(planeVertices);
 
     // 初始化 Gizmo
     m_LightGizmo.Init(
@@ -53,10 +69,29 @@ void Renderer::Init()
 }
 
 /// @brief 开始一帧渲染
-void Renderer::BeginFrame()
+void Renderer::BeginFrame(unsigned int viewportWidth, unsigned int viewportHeight)
 {
+    // 离屏阶段会改变 FBO 和视口，此处显式恢复窗口对应的默认渲染目标。
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, static_cast<GLsizei>(viewportWidth), static_cast<GLsizei>(viewportHeight));
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // 清除颜色与深度缓冲
+}
+
+void Renderer::BeginObjectPass()
+{
+    // Framebuffer::Bind 同时会把视口切换为离屏纹理尺寸。
+    m_Framebuffer.Bind();
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+}
+
+void Renderer::EndObjectPass()
+{
+    m_Framebuffer.Unbind();
+
+    // 物体绘制只更新了纹理第 0 层，缩小过滤所需的其他层级需要重新生成。
+    m_Framebuffer.GenerateMipmaps();
 }
 
 /// @brief 渲染场景
@@ -113,6 +148,18 @@ void Renderer::RenderScene(const cy::Matrix4f& mvp, const cy::Matrix4f& mv, cons
 	// 绑定 VAO
 	// 绘制三角形
     m_Mesh.Draw();
+}
+
+void Renderer::RenderPlane(const cy::Matrix4f& mvp)
+{
+    m_PlaneShader.Bind();
+    m_PlaneShader.SetMatrix4("mvp", &mvp.cell[0]);
+
+    // 将离屏颜色附件作为普通二维纹理交给平面片段着色器采样。
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, m_Framebuffer.GetColorTexture());
+    m_PlaneShader.SetInt("renderedTexture", 0);
+    m_PlaneMesh.Draw();
 }
 
 /// @brief 结束一帧渲染
@@ -311,23 +358,41 @@ GLuint Renderer::LoadTexturePNG(const std::string& filePath) {
 
 // --- 新增：暴露给外部的纹理加载接口 ---
 void Renderer::LoadTextures(const std::string& diffusePath, const std::string& specularPath) {
-    m_DiffuseTexture = LoadTexturePNG(diffusePath);
-    m_SpecularTexture = LoadTexturePNG(specularPath);
+    // 允许重复加载模型：替换纹理前先释放上一组 GPU 资源。
+    if (m_DiffuseTexture != 0) glDeleteTextures(1, &m_DiffuseTexture);
+    if (m_SpecularTexture != 0) glDeleteTextures(1, &m_SpecularTexture);
+
+    m_DiffuseTexture = diffusePath.empty() ? 0 : LoadTexturePNG(diffusePath);
+    m_SpecularTexture = specularPath.empty() ? 0 : LoadTexturePNG(specularPath);
 }
 
 // --- 新增：重新加载着色器的接口 ---
 void Renderer::ReloadShaders() {
-    m_MainShader.Load(
-		"assets/shaders/triangle.vert",
-		"assets/shaders/triangle.frag"
+    const bool mainLoaded = m_MainShader.Load(
+        "assets/shaders/triangle.vert",
+        "assets/shaders/triangle.frag"
     );
 
-    std::cout << "[Renderer] Shaders reloaded successfully!" << std::endl;
+    const bool planeLoaded = m_PlaneShader.Load(
+        "assets/shaders/plane.vert",
+        "assets/shaders/plane.frag"
+    );
+
+    if (mainLoaded && planeLoaded) {
+        std::cout << "[Renderer] Shaders reloaded successfully!" << std::endl;
+    }else {
+        std::cerr << "[Renderer] One or more shaders failed to reload." << std::endl;
+    }
 }
 
 // --- 新增：调用 LightGizmo 的 Draw 方法 ---
-void Renderer::DrawLightGizmo(const cy::Matrix4f& proj, const cy::Matrix4f& view, const cy::Vec3f& lightWorldPos, float scale) {
-    // 你的 LightGizmo::Draw 已经处理了禁用深度测试和开启混合，所以直接调用即可
+void Renderer::DrawLightGizmo(
+    const cy::Matrix4f& proj,
+    const cy::Matrix4f& view,
+    const cy::Vec3f& lightWorldPos,
+    float scale)
+{
+    // LightGizmo::Draw 已经处理了禁用深度测试和开启混合，所以直接调用即可
     m_LightGizmo.Draw(proj, view, lightWorldPos, scale);
 }
 

@@ -13,15 +13,22 @@
 
 #include "cyTriMesh.h"
 
+#include <filesystem>
 #include <iostream>
+#include <utility>
 
 /// @brief 构造函数
-Application::Application()
+Application::Application(std::string objPath)
     :
     m_Camera(
         cy::Vec3f(0, 0, 0),
         50.0f
-    )
+    ),
+    m_PlaneCamera(
+        cy::Vec3f(0, 0, 0),
+        3.5f
+    ),
+    m_ObjPath(std::move(objPath))
 {
     
 }
@@ -106,9 +113,13 @@ bool Application::Init() {
         return false;
     }
 
-    m_Camera.SetAspectRatio(
-        (float)m_Width / (float)m_Height
-    );
+    // OpenGL 上下文已经可用，后续任一步失败都应由 Shutdown 统一释放资源。
+    m_Initialized = true;
+
+    // 离屏纹理为正方形，物体相机固定使用 1:1；平面相机跟随窗口宽高比。
+    m_Camera.SetAspectRatio(1.0f);
+    m_PlaneCamera.SetAspectRatio(
+        static_cast<float>(m_Width) / static_cast<float>(m_Height));
 
     std::cout << "[System] Engine Initialized Successfully! " << std::endl;
 
@@ -136,14 +147,21 @@ bool Application::Init() {
     // 第一阶段妥协：在 App 层临时加载网格和纹理
     // ==========================================
     cy::TriMesh mesh;
-    std::string objPath = "assets/models/teapot.obj";
-    if (!mesh.LoadFromFileObj(objPath.c_str())) {
-        std::cerr << "Failed to load obj!" << std::endl;
+    if (!mesh.LoadFromFileObj(m_ObjPath.c_str())) {
+        std::cerr << "[Error] Failed to load OBJ: " << m_ObjPath << std::endl;
         return false;
     }
+
     mesh.ComputeBoundingBox();
-    mesh.ComputeNormals();
+    if (!mesh.HasNormals()) {
+        // OBJ 未提供法线时由 cyTriMesh 自动生成，保证光照着色可用。
+        mesh.ComputeNormals();
+    }
     m_ObjCenter = (mesh.GetBoundMax() + mesh.GetBoundMin()) * 0.5f;
+
+    // 根据包围盒自动调整观察距离，使不同尺寸的模型都能进入离屏画面。
+    const float modelDiameter = (mesh.GetBoundMax() - mesh.GetBoundMin()).Length();
+    m_Camera.SetDistance(modelDiameter > 0.0f ? modelDiameter * 1.25f : 5.0f);
 
     std::vector<Vertex> vertices;
     vertices.reserve(static_cast<size_t>(mesh.NF()) * 3);
@@ -168,12 +186,29 @@ bool Application::Init() {
     }
     m_Renderer->SetMesh(vertices);
 
-    // 加载纹理（硬编码路径测试）
-    m_Renderer->LoadTextures("assets/models/brick.png", "assets/models/brick-specular.png");
+    std::filesystem::path diffusePath;
+    std::filesystem::path specularPath;
+    const std::filesystem::path modelDirectory =
+        std::filesystem::path(m_ObjPath).parent_path();
+
+    // 当前渲染器使用一组材质纹理，因此选取 MTL 中首个有效的漫反射和高光贴图。
+    // 贴图路径以 OBJ 所在目录为基准进行解析。
+    for (unsigned int i = 0; i < mesh.NM(); ++i) {
+        const cy::TriMesh::Mtl& material = mesh.M(i);
+        if (diffusePath.empty() && material.map_Kd.data != nullptr) {
+            diffusePath = modelDirectory / material.map_Kd.data;
+        }
+        if (specularPath.empty() && material.map_Ks.data != nullptr) {
+            specularPath = modelDirectory / material.map_Ks.data;
+        }
+    }
+
+    m_Renderer->LoadTextures(
+        diffusePath.empty() ? std::string() : diffusePath.lexically_normal().string(),
+        specularPath.empty() ? std::string() : specularPath.lexically_normal().string());
 
     glfwGetCursorPos(m_Window, &m_LastX, &m_LastY);
 
-    m_Initialized = true;
     return true;
 }
 
@@ -184,7 +219,8 @@ void Application::Update() {
 
 /// @brief 渲染应用程序
 void Application::Render() {
-	m_Renderer->BeginFrame();
+	// 第一阶段：将带光照和材质的物体渲染到 FBO 的颜色纹理。
+	m_Renderer->BeginObjectPass();
 
 	cy::Matrix4f projMatrix = m_Camera.GetProjectionMatrix();
 	cy::Matrix4f viewMatrix = m_Camera.GetViewMatrix();
@@ -193,22 +229,34 @@ void Application::Render() {
     cy::Matrix4f mv = viewMatrix * modelMatrix;
     cy::Matrix4f mvp = projMatrix * viewMatrix * modelMatrix;
 
-    // 光源计算
-    cy::Vec3f lightBasePos(0.0f, 10.0f, 20.0f);
-    // 通过 lightRot 变量将光源绕物体中心旋转
-    cy::Matrix4f lightRotMatrix = cy::Matrix4f::RotationX(m_LightRotX) * cy::Matrix4f::RotationY(m_LightRotY);
-    cy::Vec4f lightPosWorld = lightRotMatrix * cy::Vec4f(lightBasePos.x, lightBasePos.y, lightBasePos.z, 1.0f);
-    // 统一转换到 View Space，以便在着色器中进行光照计算
+    // 使用 Ctrl + 左键积累的旋转角，让光源绕模型中心运动。
+    const cy::Vec3f lightBasePos(0.0f, 10.0f, 20.0f);
+    const cy::Matrix4f lightRotation =
+        cy::Matrix4f::RotationX(m_LightRotX) *
+        cy::Matrix4f::RotationY(m_LightRotY);
+    const cy::Vec4f lightPosWorld = lightRotation *
+        cy::Vec4f(lightBasePos.x, lightBasePos.y, lightBasePos.z, 1.0f);
     cy::Vec4f lightPosView = viewMatrix * lightPosWorld;
 
     // 2. 将数据提交给 Renderer
     m_Renderer->RenderScene(mvp, mv, cy::Vec3f(lightPosView.x, lightPosView.y, lightPosView.z));
 
-    // --- 判断并绘制 LightGizmo ---
+    // 光源图标也绘制到 FBO，使黄色圆圈成为最终平面纹理的一部分。
     if (m_DrawDebugGizmos) {
-        // 直接将投影矩阵、观察矩阵以及世界空间光源位置传给 Renderer
-        m_Renderer->DrawLightGizmo(projMatrix, viewMatrix, cy::Vec3f(lightPosWorld.x, lightPosWorld.y, lightPosWorld.z), 1.0f);
+        m_Renderer->DrawLightGizmo(
+            projMatrix,
+            viewMatrix,
+            cy::Vec3f(lightPosWorld.x, lightPosWorld.y, lightPosWorld.z),
+            1.0f);
     }
+
+	m_Renderer->EndObjectPass();
+
+    // 第二阶段：回到默认帧缓冲，把第一阶段生成的纹理贴到方形平面上。
+    m_Renderer->BeginFrame(m_Width, m_Height);
+	const cy::Matrix4f planeMvp =
+		m_PlaneCamera.GetProjectionMatrix() * m_PlaneCamera.GetViewMatrix();
+	m_Renderer->RenderPlane(planeMvp);
 
 	m_Renderer->EndFrame();
 }
@@ -247,9 +295,10 @@ void Application::FramebufferSizeCallback(GLFWwindow* window, int width, int hei
         app->m_Width = width;
         app->m_Height = height;
 
-        app->m_Camera.SetAspectRatio(
-            (float)width / (float)height
-        );
+        if (height > 0) {
+            app->m_PlaneCamera.SetAspectRatio(
+                static_cast<float>(width) / static_cast<float>(height));
+        }
 
         glViewport(0, 0, width, height);
     }
@@ -274,23 +323,30 @@ void Application::CursorPositionCallback(GLFWwindow* window, double xpos, double
     app->m_LastX = xpos;
     app->m_LastY = ypos;
 
-    app->m_CtrlDown = (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
-        glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS);
+    const bool altDown =
+        glfwGetKey(window, GLFW_KEY_LEFT_ALT) == GLFW_PRESS ||
+        glfwGetKey(window, GLFW_KEY_RIGHT_ALT) == GLFW_PRESS;
+    app->m_CtrlDown =
+        glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
+        glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS;
 
-    // 左键旋转
+    // Alt 的优先级最高：按住 Alt 时始终操作纹理平面相机。
+    Camera& activeCamera = altDown ? app->m_PlaneCamera : app->m_Camera;
+
+    // 左键默认旋转相机；未按 Alt 而按住 Ctrl 时恢复原有的光源旋转操作。
     if (app->m_LeftDown) {
-        if (app->m_CtrlDown) {
-            app->m_LightRotX += (float)dx * 0.01f;
-            app->m_LightRotY += (float)dy * 0.01f;
-        }else {
-            app->m_Camera.ProcessMouseOrbit(dx, dy);
+        if (!altDown && app->m_CtrlDown) {
+            app->m_LightRotX += static_cast<float>(dx) * 0.01f;
+            app->m_LightRotY += static_cast<float>(dy) * 0.01f;
         }
-
+        else {
+            activeCamera.ProcessMouseOrbit(static_cast<float>(dx), static_cast<float>(dy));
+        }
     }
 
     // 右键缩放
     if (app->m_RightDown) {
-		app->m_Camera.ProcessMouseZoom(dy);
+        activeCamera.ProcessMouseZoom(static_cast<float>(dy));
     }
 }
 
@@ -306,10 +362,11 @@ void Application::KeyCallback(GLFWwindow* window, int key, int scancode, int act
         app->m_Camera.ToggleProjectionMode();
     }
 
-    // --- L 键切换光源 Gizmo 显示 ---
+    // L 键切换黄色光源位置图标；只控制显示，不影响实际光照计算。
     if (key == GLFW_KEY_L && action == GLFW_PRESS) {
         app->m_DrawDebugGizmos = !app->m_DrawDebugGizmos;
-        std::cout << "[Editor] Debug Gizmos: " << (app->m_DrawDebugGizmos ? "ON" : "OFF") << std::endl;
+        std::cout << "[Editor] Light Gizmo: "
+            << (app->m_DrawDebugGizmos ? "ON" : "OFF") << std::endl;
     }
 
     // 退出（ESC）

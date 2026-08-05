@@ -22,7 +22,7 @@ class Application
 
 public:
 	/// @brief 构造函数
-    Application();
+    explicit Application(std::string objPath);
 
 	/// @brief 析构函数，自动调用 Shutdown 释放资源
     ~Application();
@@ -35,16 +35,19 @@ public:
     void Run();
 
 private:
-    GLFWwindow* m_Window        = nullptr; ///< GLFW 窗口对象的指针句柄
+    GLFWwindow* m_Window        = nullptr;      ///< GLFW 窗口对象的指针句柄
 
-    Renderer* m_Renderer        = nullptr; ///< 渲染器对象的指针句柄
+    Renderer* m_Renderer        = nullptr;      ///< 渲染器对象的指针句柄
 
-	Camera m_Camera;                     ///< 摄像机对象
+	Camera m_Camera;                            ///< 离屏渲染物体所使用的摄像机
+	Camera m_PlaneCamera;                       ///< 最终显示纹理平面所使用的摄像机
 
-    bool m_Initialized          = false;    ///< 应用程序是否已初始化
+	std::string m_ObjPath;                      ///< 从命令行传入的 OBJ 文件路径
 
-    unsigned int m_Width        = 1920;  ///< 窗口宽度
-    unsigned int m_Height       = 1080; ///< 窗口高度
+    bool m_Initialized          = false;        ///< 应用程序是否已初始化
+
+    unsigned int m_Width        = 1920;         ///< 窗口宽度
+    unsigned int m_Height       = 1080;         ///< 窗口高度
 
     // --- Mouse state ---
     double m_LastX              = 0.0;
@@ -52,15 +55,13 @@ private:
     bool m_LeftDown             = false;
     bool m_RightDown            = false;
 
-	// --- light ---
-    bool m_CtrlDown             = false;
-    float m_LightRotX           = 0.0f;
-    float m_LightRotY           = 0.0f;
+    // --- 光源交互与调试图标 ---
+    bool m_CtrlDown             = false;       ///< Ctrl 是否按下，用于切换到光源旋转操作
+    float m_LightRotX           = 0.0f;        ///< 光源绕 X 轴的旋转角
+    float m_LightRotY           = 0.0f;        ///< 光源绕 Y 轴的旋转角
+    bool m_DrawDebugGizmos      = true;        ///< 是否绘制黄色光源位置图标
 
-    cy::Vec3f m_ObjCenter; // 模型的中心点
-
-    // --- Debug 可视化开关 ---
-    bool m_DrawDebugGizmos      = true;
+    cy::Vec3f m_ObjCenter;                     ///< 模型包围盒中心
 
 private:
     /// @brief 初始化应用程序
