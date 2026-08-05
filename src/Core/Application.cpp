@@ -229,6 +229,9 @@ void Application::Render() {
     cy::Matrix4f mv = viewMatrix * modelMatrix;
     cy::Matrix4f mvp = projMatrix * viewMatrix * modelMatrix;
 
+    // 绘制天空盒（必须在物体之前，使用 .xyww 技巧 + LEQUAL 深度测试）
+    m_Renderer->RenderSkybox(projMatrix, viewMatrix);
+
     // 使用 Ctrl + 左键积累的旋转角，让光源绕模型中心运动。
     const cy::Vec3f lightBasePos(0.0f, 10.0f, 20.0f);
     const cy::Matrix4f lightRotation =
@@ -239,7 +242,7 @@ void Application::Render() {
     cy::Vec4f lightPosView = viewMatrix * lightPosWorld;
 
     // 2. 将数据提交给 Renderer
-    m_Renderer->RenderScene(mvp, mv, cy::Vec3f(lightPosView.x, lightPosView.y, lightPosView.z));
+    m_Renderer->RenderScene(mvp, mv, cy::Vec3f(lightPosView.x, lightPosView.y, lightPosView.z), viewMatrix);
 
     // 光源图标也绘制到 FBO，使黄色圆圈成为最终平面纹理的一部分。
     if (m_DrawDebugGizmos) {

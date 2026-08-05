@@ -56,7 +56,8 @@ public:
     void RenderScene(
         const cy::Matrix4f& mvp,
         const cy::Matrix4f& mv,
-        const cy::Vec3f& lightPosView
+        const cy::Vec3f& lightPosView,
+        const cy::Matrix4f& view
     );
 
     /// @brief 将离屏渲染纹理绘制到方形平面
@@ -94,11 +95,16 @@ public:
     /// @brief 获取 FBO 引用
     Framebuffer& GetFramebuffer() { return m_Framebuffer; }
 
+    // --- 新增：天空盒相关接口 ---
+    void LoadCubemap(const std::string& dirPath);
+    void RenderSkybox(const cy::Matrix4f& projection, const cy::Matrix4f& view);
+
 private:
 
     // Shader
 	Shader m_MainShader;                ///< 物体渲染的主着色器
     Shader m_PlaneShader;               ///< 显示离屏纹理的平面着色器
+    Shader m_SkyboxShader;              ///< 天空盒着色器
 
     // Framebuffer
     Framebuffer m_Framebuffer;
@@ -109,10 +115,12 @@ private:
     // Mesh GPU Resource
 	Mesh m_Mesh;                        ///< 物体模型网格
     Mesh m_PlaneMesh;                   ///< 由两个三角形组成的正方形平面
+    Mesh m_SkyboxMesh;                  ///< 天空盒立方体网格
 
     // Texture GPU Resource
     GLuint m_DiffuseTexture = 0;
     GLuint m_SpecularTexture = 0;
+    GLuint m_CubemapTexture = 0;            ///< 天空盒立方体贴图
 
     // Mesh Info
 private:

@@ -25,6 +25,7 @@ Renderer::~Renderer()
 	// 删除纹理对象
     if (m_DiffuseTexture) glDeleteTextures(1, &m_DiffuseTexture);
     if (m_SpecularTexture) glDeleteTextures(1, &m_SpecularTexture);
+    if (m_CubemapTexture) glDeleteTextures(1, &m_CubemapTexture);
 
 	// 删除顶点缓冲对象和顶点数组对象
 
@@ -47,6 +48,11 @@ void Renderer::Init()
         "assets/shaders/plane.frag"
     );
 
+    m_SkyboxShader.Load(
+        "assets/shaders/skybox.vert",
+        "assets/shaders/skybox.frag"
+    );
+
     // 最终显示平面位于 XY 平面，由两个逆时针三角形组成，UV 覆盖完整离屏纹理。
     const std::vector<Vertex> planeVertices = {
         { cy::Vec3f(-1.0f, -1.0f, 0.0f), cy::Vec3f(0.0f, 0.0f, 1.0f), cy::Vec2f(0.0f, 0.0f) },
@@ -57,6 +63,36 @@ void Renderer::Init()
         { cy::Vec3f(-1.0f,  1.0f, 0.0f), cy::Vec3f(0.0f, 0.0f, 1.0f), cy::Vec2f(0.0f, 1.0f) }
     };
     m_PlaneMesh.Upload(planeVertices);
+
+    // 天空盒立方体：1x1x1 立方体，36 个顶点（6 个面 × 2 个三角形 × 3 个顶点）
+    // 仅需要位置数据，法线和纹理坐标填零
+    {
+        const float s = 1.0f; // 半边长
+        const std::vector<Vertex> cubeVertices = {
+            // +X 面 (右)
+            {{ s, -s, -s}, {0,0,0}, {0,0}}, {{ s,  s, -s}, {0,0,0}, {0,0}}, {{ s,  s,  s}, {0,0,0}, {0,0}},
+            {{ s, -s, -s}, {0,0,0}, {0,0}}, {{ s,  s,  s}, {0,0,0}, {0,0}}, {{ s, -s,  s}, {0,0,0}, {0,0}},
+            // -X 面 (左)
+            {{-s, -s,  s}, {0,0,0}, {0,0}}, {{-s,  s,  s}, {0,0,0}, {0,0}}, {{-s,  s, -s}, {0,0,0}, {0,0}},
+            {{-s, -s,  s}, {0,0,0}, {0,0}}, {{-s,  s, -s}, {0,0,0}, {0,0}}, {{-s, -s, -s}, {0,0,0}, {0,0}},
+            // +Y 面 (上) — y-up 约定
+            {{ s,  s, -s}, {0,0,0}, {0,0}}, {{-s,  s, -s}, {0,0,0}, {0,0}}, {{-s,  s,  s}, {0,0,0}, {0,0}},
+            {{ s,  s, -s}, {0,0,0}, {0,0}}, {{-s,  s,  s}, {0,0,0}, {0,0}}, {{ s,  s,  s}, {0,0,0}, {0,0}},
+            // -Y 面 (下)
+            {{ s, -s,  s}, {0,0,0}, {0,0}}, {{-s, -s,  s}, {0,0,0}, {0,0}}, {{-s, -s, -s}, {0,0,0}, {0,0}},
+            {{ s, -s,  s}, {0,0,0}, {0,0}}, {{-s, -s, -s}, {0,0,0}, {0,0}}, {{ s, -s, -s}, {0,0,0}, {0,0}},
+            // +Z 面 (前)
+            {{ s, -s,  s}, {0,0,0}, {0,0}}, {{ s,  s,  s}, {0,0,0}, {0,0}}, {{-s,  s,  s}, {0,0,0}, {0,0}},
+            {{ s, -s,  s}, {0,0,0}, {0,0}}, {{-s,  s,  s}, {0,0,0}, {0,0}}, {{-s, -s,  s}, {0,0,0}, {0,0}},
+            // -Z 面 (后)
+            {{-s, -s, -s}, {0,0,0}, {0,0}}, {{-s,  s, -s}, {0,0,0}, {0,0}}, {{ s,  s, -s}, {0,0,0}, {0,0}},
+            {{-s, -s, -s}, {0,0,0}, {0,0}}, {{ s,  s, -s}, {0,0,0}, {0,0}}, {{ s, -s, -s}, {0,0,0}, {0,0}},
+        };
+        m_SkyboxMesh.Upload(cubeVertices);
+    }
+
+    // 加载天空盒立方体贴图
+    LoadCubemap("assets/models/cubemap");
 
     // 初始化 Gizmo
     m_LightGizmo.Init(
@@ -98,7 +134,7 @@ void Renderer::EndObjectPass()
 /// @param mvp 
 /// @param mv 
 /// @param lightPosView 
-void Renderer::RenderScene(const cy::Matrix4f& mvp, const cy::Matrix4f& mv, const cy::Vec3f& lightPosView)
+void Renderer::RenderScene(const cy::Matrix4f& mvp, const cy::Matrix4f& mv, const cy::Vec3f& lightPosView, const cy::Matrix4f& view)
 {
 	// 使用着色器程序
 	m_MainShader.Bind();
@@ -121,6 +157,16 @@ void Renderer::RenderScene(const cy::Matrix4f& mvp, const cy::Matrix4f& mv, cons
         lightPosView.z
     );
 
+    // --- 环境反射：计算 view→world 旋转矩阵（视图矩阵左上 3×3 的转置） ---
+    float viewToWorldData[9] = {
+        view.cell[0], view.cell[4], view.cell[8],
+        view.cell[1], view.cell[5], view.cell[9],
+        view.cell[2], view.cell[6], view.cell[10]
+    };
+    GLint vtLoc = glGetUniformLocation(m_MainShader.GetProgramID(), "viewToWorld");
+    if (vtLoc != -1) {
+        glUniformMatrix3fv(vtLoc, 1, GL_FALSE, viewToWorldData);
+    }
 
     // 2. 绑定纹理并传递标志位
     if (m_DiffuseTexture != 0) {
@@ -143,6 +189,13 @@ void Renderer::RenderScene(const cy::Matrix4f& mvp, const cy::Matrix4f& mv, cons
     }
     else {
         m_MainShader.SetInt("hasSpecularMap", 0);
+    }
+
+    // --- 绑定 Cubemap 到纹理单元 2 用于环境反射 ---
+    if (m_CubemapTexture != 0) {
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, m_CubemapTexture);
+        m_MainShader.SetInt("cubemap", 2);
     }
 
 	// 绑定 VAO
@@ -366,6 +419,86 @@ void Renderer::LoadTextures(const std::string& diffusePath, const std::string& s
     m_SpecularTexture = specularPath.empty() ? 0 : LoadTexturePNG(specularPath);
 }
 
+// --- 新增：立方体贴图加载 ---
+void Renderer::LoadCubemap(const std::string& dirPath) {
+    // 六个面的文件名后缀（OpenGL cubemap 枚举顺序）
+    const std::string faceNames[6] = {
+        "posx", "negx",
+        "posy", "negy",
+        "posz", "negz"
+    };
+
+    glGenTextures(1, &m_CubemapTexture);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, m_CubemapTexture);
+
+    for (int i = 0; i < 6; ++i) {
+        const std::string filePath = dirPath + "/cubemap_" + faceNames[i] + ".png";
+
+        std::vector<unsigned char> image;
+        unsigned width, height;
+        unsigned error = lodepng::decode(image, width, height, filePath);
+
+        if (error) {
+            std::cerr << "[Cubemap Error] " << lodepng_error_text(error)
+                      << " File: " << filePath << std::endl;
+            continue;
+        }
+
+        glTexImage2D(
+            GL_TEXTURE_CUBE_MAP_POSITIVE_X + i,
+            0, GL_RGBA,
+            static_cast<GLsizei>(width),
+            static_cast<GLsizei>(height),
+            0, GL_RGBA, GL_UNSIGNED_BYTE,
+            image.data()
+        );
+    }
+
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+
+    glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
+
+    std::cout << "[Renderer] Cubemap loaded from: " << dirPath << std::endl;
+}
+
+// --- 新增：天空盒渲染 ---
+void Renderer::RenderSkybox(const cy::Matrix4f& projection, const cy::Matrix4f& view) {
+    if (m_CubemapTexture == 0) return;
+
+    // 保存当前深度测试状态
+    m_SkyboxShader.Bind();
+
+    // 去除视图矩阵的平移分量，使天空盒始终以相机为中心
+    cy::Matrix4f skyboxView = view;
+    skyboxView.cell[12] = 0.0f;
+    skyboxView.cell[13] = 0.0f;
+    skyboxView.cell[14] = 0.0f;
+
+    m_SkyboxShader.SetMatrix4("projection", &projection.cell[0]);
+    m_SkyboxShader.SetMatrix4("view", &skyboxView.cell[0]);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, m_CubemapTexture);
+    m_SkyboxShader.SetInt("skybox", 0);
+
+    // 天空盒渲染状态：禁止深度写入，使用 GL_LEQUAL
+    // .xyww 技巧使天空盒深度恒为 1.0（远平面），LEQUAL 使其在初始深度 1.0 处可见
+    glDepthMask(GL_FALSE);
+    glDepthFunc(GL_LEQUAL);
+
+    m_SkyboxMesh.Draw();
+
+    // 恢复默认深度状态
+    glDepthFunc(GL_LESS);
+    glDepthMask(GL_TRUE);
+
+    glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
+}
+
 // --- 新增：重新加载着色器的接口 ---
 void Renderer::ReloadShaders() {
     const bool mainLoaded = m_MainShader.Load(
@@ -378,7 +511,12 @@ void Renderer::ReloadShaders() {
         "assets/shaders/plane.frag"
     );
 
-    if (mainLoaded && planeLoaded) {
+    const bool skyboxLoaded = m_SkyboxShader.Load(
+        "assets/shaders/skybox.vert",
+        "assets/shaders/skybox.frag"
+    );
+
+    if (mainLoaded && planeLoaded && skyboxLoaded) {
         std::cout << "[Renderer] Shaders reloaded successfully!" << std::endl;
     }else {
         std::cerr << "[Renderer] One or more shaders failed to reload." << std::endl;
