@@ -17,7 +17,9 @@
 
 #include "Shader.h"
 #include "Mesh.h"
+#include "Framebuffer.h"
 #include "Editor/LightGizmo.h"
+
 
 class Renderer
 {
@@ -74,10 +76,18 @@ public:
         float scale
     );
 
+    void SetDiffuseTexture(GLuint textureID);
+
+    /// @brief 获取 FBO 引用
+    Framebuffer& GetFramebuffer() { return m_Framebuffer; }
+
 private:
 
     // Shader
     Shader m_MainShader;
+
+    // Framebuffer
+    Framebuffer m_Framebuffer;
 
     // Editor Debug
     LightGizmo m_LightGizmo;

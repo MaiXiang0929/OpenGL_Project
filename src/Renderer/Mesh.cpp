@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 /// @file Mesh.cpp
-/// @brief 
-/// @details
+/// @brief Mesh 类的实现文件
+/// @details 该文件实现了 Mesh 类的核心功能，包括顶点数据上传、绘制以及 OpenGL 缓冲区管理。
 /// @author MaiX
-/// @date 
+/// @date 2026-08-04
 
 
 #include "Mesh.h"

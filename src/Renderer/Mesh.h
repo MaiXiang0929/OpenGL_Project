@@ -1,3 +1,11 @@
+// SPDX-License-Identifier: MIT
+/// @file Mesh.h
+/// @brief Mesh 类的声明文件
+/// @details 该文件声明了 Mesh 类，包含顶点数据管理和 OpenGL 渲染相关功能。
+/// @author MaiX
+/// @date 2026-08-04
+
+
 #pragma once
 
 #include <vector>

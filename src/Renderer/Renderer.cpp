@@ -48,7 +48,8 @@ void Renderer::Init()
         "assets/shaders/billboard.frag"
     );
 
-    
+    // 初始化 1024x1024 分辨率的离屏缓冲
+    m_Framebuffer.Init(1024, 1024);
 }
 
 /// @brief 开始一帧渲染
@@ -328,4 +329,8 @@ void Renderer::ReloadShaders() {
 void Renderer::DrawLightGizmo(const cy::Matrix4f& proj, const cy::Matrix4f& view, const cy::Vec3f& lightWorldPos, float scale) {
     // 你的 LightGizmo::Draw 已经处理了禁用深度测试和开启混合，所以直接调用即可
     m_LightGizmo.Draw(proj, view, lightWorldPos, scale);
+}
+
+void Renderer::SetDiffuseTexture(GLuint textureID) {
+	m_DiffuseTexture = textureID;
 }
