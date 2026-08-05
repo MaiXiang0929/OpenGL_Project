@@ -556,7 +556,10 @@ void Renderer::RenderGroundPlane(
 
     m_GroundPlaneMesh.Draw();
 
+    // 恢复纹理状态：确保从正确的纹理单元解绑
+    glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, 0);
+    glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
 }
 
