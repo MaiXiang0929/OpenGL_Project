@@ -49,6 +49,14 @@ void Mesh::Draw() const
     glBindVertexArray(0);
 }
 
+void Mesh::DrawPatches() const
+{
+    if (m_VertexCount == 0) return;
+    glBindVertexArray(m_VAO);
+    glDrawArrays(GL_PATCHES, 0, m_VertexCount);
+    glBindVertexArray(0);
+}
+
 int Mesh::GetVertexCount() const
 {
     return m_VertexCount;

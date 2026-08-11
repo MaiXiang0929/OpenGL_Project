@@ -98,6 +98,54 @@ bool Shader::Load(
 	return true;
 }
 
+bool Shader::LoadTessellation(
+	const std::string& vertexPath,
+	const std::string& tessControlPath,
+	const std::string& tessEvalPath,
+	const std::string& fragmentPath,
+	const std::string& geometryPath)
+{
+	const std::string sources[] = {
+		ReadFile(vertexPath), ReadFile(tessControlPath), ReadFile(tessEvalPath),
+		ReadFile(fragmentPath), geometryPath.empty() ? std::string() : ReadFile(geometryPath)
+	};
+	for (int i = 0; i < 4; ++i) if (sources[i].empty()) return false;
+
+	std::vector<GLuint> shaders;
+	const GLenum types[] = { GL_VERTEX_SHADER, GL_TESS_CONTROL_SHADER,
+		GL_TESS_EVALUATION_SHADER, GL_FRAGMENT_SHADER, GL_GEOMETRY_SHADER };
+	for (int i = 0; i < (geometryPath.empty() ? 4 : 5); ++i) {
+		GLuint shader = CompileShader(types[i], sources[i].c_str());
+		if (shader == 0) {
+			for (GLuint s : shaders) glDeleteShader(s);
+			return false;
+		}
+		shaders.push_back(shader);
+	}
+	return LinkProgram(shaders);
+}
+
+bool Shader::LinkProgram(const std::vector<GLuint>& shaders)
+{
+	GLuint program = glCreateProgram();
+	for (GLuint shader : shaders) glAttachShader(program, shader);
+	glLinkProgram(program);
+	GLint success = 0;
+	glGetProgramiv(program, GL_LINK_STATUS, &success);
+	if (!success) {
+		char infoLog[1024];
+		glGetProgramInfoLog(program, sizeof(infoLog), nullptr, infoLog);
+		std::cerr << "[Shader Error] Linking failed: " << infoLog << std::endl;
+		glDeleteProgram(program);
+		for (GLuint shader : shaders) glDeleteShader(shader);
+		return false;
+	}
+	for (GLuint shader : shaders) glDeleteShader(shader);
+	if (m_ProgramID != 0) glDeleteProgram(m_ProgramID);
+	m_ProgramID = program;
+	return true;
+}
+
 void Shader::Bind() const
 {
 	glUseProgram(m_ProgramID);
@@ -180,6 +228,11 @@ void Shader::SetInt(
 		location,
 		value
 	);
+}
+
+void Shader::SetFloat(const std::string& name, float value)
+{
+	glUniform1f(glGetUniformLocation(m_ProgramID, name.c_str()), value);
 }
 
 std::string Shader::ReadFile(

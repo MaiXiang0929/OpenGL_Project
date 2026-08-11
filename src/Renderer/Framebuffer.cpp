@@ -10,11 +10,11 @@
 
 // 匿名命名空间中的名称只在当前 Framebuffer.cpp 文件内可见，其他 .cpp 文件无法访问
 namespace {
-    // 当前 GLAD 仅生成了 OpenGL 3.3 Core 声明，因此在本文件中补充扩展枚举值。
+    // GLAD 仅生成核心 API，因此在本文件中补充各向异性过滤扩展枚举值。
     constexpr GLenum TextureMaxAnisotropyExt = 0x84FE;          // 设置某张纹理的各向异性等级
     constexpr GLenum MaxTextureMaxAnisotropyExt = 0x84FF;       // 查询显卡支持的最大等级
 
-    // 各向异性过滤不是 OpenGL 3.3 核心功能，设置参数前必须检查驱动扩展列表。
+    // 各向异性过滤不是 OpenGL 4.0 核心功能，设置参数前必须检查驱动扩展列表。
     bool SupportsAnisotropicFiltering() {
         GLint extensionCount = 0;
         glGetIntegerv(GL_NUM_EXTENSIONS, &extensionCount);

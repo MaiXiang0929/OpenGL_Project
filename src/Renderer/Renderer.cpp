@@ -10,6 +10,7 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <algorithm>
 
 #include "lodepng.h"
 
@@ -26,6 +27,8 @@ Renderer::~Renderer()
     if (m_DiffuseTexture) glDeleteTextures(1, &m_DiffuseTexture);
     if (m_SpecularTexture) glDeleteTextures(1, &m_SpecularTexture);
     if (m_CubemapTexture) glDeleteTextures(1, &m_CubemapTexture);
+    if (m_NormalTexture) glDeleteTextures(1, &m_NormalTexture);
+    if (m_DisplacementTexture) glDeleteTextures(1, &m_DisplacementTexture);
 
 	// 删除顶点缓冲对象和顶点数组对象
 
@@ -106,6 +109,24 @@ void Renderer::Init()
         "assets/shaders/ground.frag"
     );
 
+    m_TessShader.LoadTessellation(
+        "assets/shaders/tess_plane.vert", "assets/shaders/tess_plane.tesc",
+        "assets/shaders/tess_plane.tese", "assets/shaders/tess_plane.frag");
+    m_TessWireShader.LoadTessellation(
+        "assets/shaders/tess_plane.vert", "assets/shaders/tess_plane.tesc",
+        "assets/shaders/tess_plane.tese", "assets/shaders/tess_wire.frag",
+        "assets/shaders/tess_plane.geom");
+    m_TessShadowShader.LoadTessellation(
+        "assets/shaders/tess_plane.vert", "assets/shaders/tess_plane.tesc",
+        "assets/shaders/tess_plane.tese", "assets/shaders/tess_shadow.frag");
+    m_LightObjectShader.Load(
+        "assets/shaders/light_object.vert", "assets/shaders/light_object.frag");
+
+    m_ShadowDepthShader.Load(
+        "assets/shaders/shadow_depth.vert",
+        "assets/shaders/shadow_depth.frag"
+    );
+
     // 地面平面：位于 XZ 平面（Y=0），由 model 矩阵定位到场景中
     // 单位大小（-1 到 1），由 model 矩阵的 scale 控制实际大小
     {
@@ -120,6 +141,9 @@ void Renderer::Init()
     m_Framebuffer.Init(1024, 1024);
     // 初始化 512x512 分辨率的反射缓冲区
     m_ReflectionFramebuffer.Init(512, 512);
+    // 阴影贴图独立于窗口尺寸，避免窗口缩放导致 GPU 资源反复创建。
+    m_ShadowMap.Init(2048, 2048);
+    m_TessShadowMap.Init(1024, 1024);
 }
 
 /// @brief 开始一帧渲染
@@ -148,11 +172,39 @@ void Renderer::EndObjectPass()
     m_Framebuffer.GenerateMipmaps();
 }
 
+void Renderer::BeginShadowPass()
+{
+    m_ShadowMap.BindForWriting();
+    glClear(GL_DEPTH_BUFFER_BIT);
+
+    // 深度方向做少量偏移，减轻同一表面写入和采样时产生的 shadow acne。
+    glEnable(GL_POLYGON_OFFSET_FILL);
+    glPolygonOffset(2.0f, 4.0f);
+}
+
+void Renderer::RenderShadowCaster(const cy::Matrix4f& lightMvp)
+{
+    m_ShadowDepthShader.Bind();
+    m_ShadowDepthShader.SetMatrix4("lightMvp", &lightMvp.cell[0]);
+    m_Mesh.Draw();
+}
+
+void Renderer::EndShadowPass()
+{
+    glDisable(GL_POLYGON_OFFSET_FILL);
+    m_ShadowMap.Unbind();
+}
+
 /// @brief 渲染场景
 /// @param mvp 
 /// @param mv 
 /// @param lightPosView 
-void Renderer::RenderScene(const cy::Matrix4f& mvp, const cy::Matrix4f& mv, const cy::Vec3f& lightPosView, const cy::Matrix4f& view)
+void Renderer::RenderScene(
+    const cy::Matrix4f& mvp,
+    const cy::Matrix4f& mv,
+    const cy::Vec3f& lightPosView,
+    const cy::Matrix4f& view,
+    const cy::Matrix4f& lightMvp)
 {
 	// 使用着色器程序
 	m_MainShader.Bind();
@@ -166,6 +218,12 @@ void Renderer::RenderScene(const cy::Matrix4f& mvp, const cy::Matrix4f& mv, cons
     m_MainShader.SetMatrix4(
         "mv",
         &mv.cell[0]
+    );
+
+    // 片元着色器使用该矩阵把当前 OBJ 片元映射到阴影纹理。
+    m_MainShader.SetMatrix4(
+        "lightMvp",
+        &lightMvp.cell[0]
     );
 
     m_MainShader.SetVec3(
@@ -216,6 +274,12 @@ void Renderer::RenderScene(const cy::Matrix4f& mvp, const cy::Matrix4f& mv, cons
         m_MainShader.SetInt("cubemap", 2);
     }
 
+    // 深度纹理启用了硬件比较模式，因此 shader 侧使用 sampler2DShadow。
+    glActiveTexture(GL_TEXTURE3);
+    glBindTexture(GL_TEXTURE_2D, m_ShadowMap.GetDepthTexture());
+    m_MainShader.SetInt("shadowMap", 3);
+    m_MainShader.SetInt("shadowsEnabled", m_ShadowsEnabled ? 1 : 0);
+
 	// 绑定 VAO
 	// 绘制三角形
     m_Mesh.Draw();
@@ -231,6 +295,83 @@ void Renderer::RenderPlane(const cy::Matrix4f& mvp)
     glBindTexture(GL_TEXTURE_2D, m_Framebuffer.GetColorTexture());
     m_PlaneShader.SetInt("renderedTexture", 0);
     m_PlaneMesh.Draw();
+}
+
+void Renderer::LoadTessellationTextures(const std::string& normalPath,
+    const std::string& displacementPath)
+{
+    if (m_NormalTexture) glDeleteTextures(1, &m_NormalTexture);
+    if (m_DisplacementTexture) glDeleteTextures(1, &m_DisplacementTexture);
+    m_NormalTexture = normalPath.empty() ? 0 : LoadTexturePNG(normalPath);
+    m_DisplacementTexture = displacementPath.empty() ? 0 : LoadTexturePNG(displacementPath);
+
+    if (m_NormalTexture == 0) {
+        const unsigned char flatNormal[] = { 128, 128, 255, 255 };
+        glGenTextures(1, &m_NormalTexture);
+        glBindTexture(GL_TEXTURE_2D, m_NormalTexture);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, flatNormal);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
+}
+
+void Renderer::RenderTessellatedPlane(const cy::Matrix4f& mvp, const cy::Matrix4f& lightMvp,
+    const cy::Vec3f& lightPosition, const cy::Vec3f& cameraPosition)
+{
+    glPatchParameteri(GL_PATCH_VERTICES, 3);
+    auto bindCommon = [&](Shader& shader) {
+        shader.Bind();
+        shader.SetMatrix4("mvp", &mvp.cell[0]);
+        shader.SetFloat("tessellationLevel", m_DisplacementTexture ? m_TessellationLevel : 1.0f);
+        shader.SetFloat("displacementScale", 0.35f);
+        shader.SetInt("hasDisplacement", m_DisplacementTexture ? 1 : 0);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, m_NormalTexture);
+        shader.SetInt("normalMap", 0);
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, m_DisplacementTexture);
+        shader.SetInt("displacementMap", 1);
+    };
+
+    GLint viewport[4];
+    glGetIntegerv(GL_VIEWPORT, viewport);
+    m_TessShadowMap.BindForWriting();
+    glClear(GL_DEPTH_BUFFER_BIT);
+    glEnable(GL_POLYGON_OFFSET_FILL);
+    glPolygonOffset(2.0f, 4.0f);
+    bindCommon(m_TessShadowShader);
+    m_TessShadowShader.SetMatrix4("mvp", &lightMvp.cell[0]);
+    m_PlaneMesh.DrawPatches();
+    glDisable(GL_POLYGON_OFFSET_FILL);
+    m_TessShadowMap.Unbind();
+    glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
+
+    bindCommon(m_TessShader);
+    m_TessShader.SetMatrix4("lightMvp", &lightMvp.cell[0]);
+    m_TessShader.SetVec3("lightPosition", lightPosition.x, lightPosition.y, lightPosition.z);
+    m_TessShader.SetVec3("cameraPosition", cameraPosition.x, cameraPosition.y, cameraPosition.z);
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, m_TessShadowMap.GetDepthTexture());
+    m_TessShader.SetInt("shadowMap", 2);
+    m_PlaneMesh.DrawPatches();
+
+    if (m_ShowTriangulation) {
+        bindCommon(m_TessWireShader);
+        glLineWidth(1.0f);
+        m_PlaneMesh.DrawPatches();
+    }
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+void Renderer::SetTessellationLevel(float level)
+{
+    m_TessellationLevel = std::max(1.0f, std::min(level, 64.0f));
 }
 
 /// @brief 结束一帧渲染
@@ -402,6 +543,19 @@ void Renderer::SetMesh(const std::vector<Vertex>& vertices)
     m_Mesh.Upload(vertices);
 }
 
+void Renderer::SetLightMesh(const std::vector<Vertex>& vertices)
+{
+    m_LightMesh.Upload(vertices);
+}
+
+void Renderer::RenderLightObject(const cy::Matrix4f& mvp)
+{
+    m_LightObjectShader.Bind();
+    m_LightObjectShader.SetMatrix4("mvp", &mvp.cell[0]);
+    m_LightObjectShader.SetVec3("lightColor", 1.0f, 0.85f, 0.15f);
+    m_LightMesh.Draw();
+}
+
 GLuint Renderer::LoadTexturePNG(const std::string& filePath) {
     std::vector<unsigned char> image;
     unsigned width, height;
@@ -534,13 +688,15 @@ void Renderer::RenderGroundPlane(
     const cy::Matrix4f& mvp,
     const cy::Matrix4f& model,
     const cy::Matrix4f& reflectionVP,
-    const cy::Vec3f& cameraWorldPos)
+    const cy::Vec3f& cameraWorldPos,
+    const cy::Matrix4f& lightVP)
 {
     m_GroundShader.Bind();
 
     m_GroundShader.SetMatrix4("mvp", &mvp.cell[0]);
     m_GroundShader.SetMatrix4("model", &model.cell[0]);
     m_GroundShader.SetMatrix4("reflectionVP", &reflectionVP.cell[0]);
+    m_GroundShader.SetMatrix4("lightVP", &lightVP.cell[0]);
     m_GroundShader.SetVec3("cameraWorldPos",
         cameraWorldPos.x, cameraWorldPos.y, cameraWorldPos.z);
 
@@ -554,9 +710,17 @@ void Renderer::RenderGroundPlane(
     glBindTexture(GL_TEXTURE_2D, m_ReflectionFramebuffer.GetColorTexture());
     m_GroundShader.SetInt("reflectionTex", 1);
 
+    // 地面只接收阴影，不参与深度 pass，因此不会向物体反向投射阴影。
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, m_ShadowMap.GetDepthTexture());
+    m_GroundShader.SetInt("shadowMap", 2);
+    m_GroundShader.SetInt("shadowsEnabled", m_ShadowsEnabled ? 1 : 0);
+
     m_GroundPlaneMesh.Draw();
 
     // 恢复纹理状态：确保从正确的纹理单元解绑
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, 0);
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, 0);
     glActiveTexture(GL_TEXTURE0);
@@ -585,7 +749,23 @@ void Renderer::ReloadShaders() {
         "assets/shaders/ground.frag"
     );
 
-    if (mainLoaded && planeLoaded && skyboxLoaded && groundLoaded) {
+    const bool shadowLoaded = m_ShadowDepthShader.Load(
+        "assets/shaders/shadow_depth.vert",
+        "assets/shaders/shadow_depth.frag"
+    );
+
+    const bool tessLoaded = m_TessShader.LoadTessellation(
+        "assets/shaders/tess_plane.vert", "assets/shaders/tess_plane.tesc",
+        "assets/shaders/tess_plane.tese", "assets/shaders/tess_plane.frag");
+    const bool tessWireLoaded = m_TessWireShader.LoadTessellation(
+        "assets/shaders/tess_plane.vert", "assets/shaders/tess_plane.tesc",
+        "assets/shaders/tess_plane.tese", "assets/shaders/tess_wire.frag",
+        "assets/shaders/tess_plane.geom");
+    const bool tessShadowLoaded = m_TessShadowShader.LoadTessellation(
+        "assets/shaders/tess_plane.vert", "assets/shaders/tess_plane.tesc",
+        "assets/shaders/tess_plane.tese", "assets/shaders/tess_shadow.frag");
+
+    if (mainLoaded && planeLoaded && skyboxLoaded && groundLoaded && shadowLoaded && tessLoaded && tessWireLoaded && tessShadowLoaded) {
         std::cout << "[Renderer] Shaders reloaded successfully!" << std::endl;
     }else {
         std::cerr << "[Renderer] One or more shaders failed to reload." << std::endl;

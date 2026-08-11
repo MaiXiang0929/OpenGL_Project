@@ -13,12 +13,14 @@
 
 #include "cyTriMesh.h"
 
+#include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <iostream>
 #include <utility>
 
 /// @brief 构造函数
-Application::Application(std::string objPath)
+Application::Application(std::string normalMapPath, std::string displacementMapPath)
     :
     m_Camera(
         cy::Vec3f(0, 0, 0),
@@ -28,7 +30,8 @@ Application::Application(std::string objPath)
         cy::Vec3f(0, 0, 0),
         3.5f
     ),
-    m_ObjPath(std::move(objPath))
+    m_NormalMapPath(std::move(normalMapPath)),
+    m_DisplacementMapPath(std::move(displacementMapPath))
 {
     
 }
@@ -69,9 +72,9 @@ bool Application::Init() {
         return false;
     }
 
-    // 配置 OpenGL 3.3 Core Profile
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    // Tessellation shaders require OpenGL 4.0 or newer.
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
     // 开启 OpenGL Debug Context
@@ -142,6 +145,7 @@ bool Application::Init() {
     // 开启 OpenGL 默认状态
 	m_Renderer = new Renderer();
 	m_Renderer->Init();
+	m_Renderer->LoadTessellationTextures(m_NormalMapPath, m_DisplacementMapPath);
 
     // ==========================================
     // 第一阶段妥协：在 App 层临时加载网格和纹理
@@ -189,6 +193,27 @@ bool Application::Init() {
     }
     m_Renderer->SetMesh(vertices);
 
+    // Load the supplied light model for an in-scene light representation.
+    cy::TriMesh lightMesh;
+    if (lightMesh.LoadFromFileObj("assets/models/light/light.obj")) {
+        lightMesh.ComputeBoundingBox();
+        if (!lightMesh.HasNormals()) lightMesh.ComputeNormals();
+        std::vector<Vertex> lightVertices;
+        lightVertices.reserve(static_cast<size_t>(lightMesh.NF()) * 3);
+        for (int i = 0; i < lightMesh.NF(); ++i) {
+            const auto face = lightMesh.F(i);
+            const auto faceNormal = lightMesh.FN(i);
+            for (int j = 0; j < 3; ++j) {
+                Vertex vertex{};
+                vertex.Position = lightMesh.V(face.v[j]);
+                vertex.Normal = lightMesh.VN(faceNormal.v[j]);
+                vertex.TexCoord = cy::Vec2f(0.0f, 0.0f);
+                lightVertices.push_back(vertex);
+            }
+        }
+        m_Renderer->SetLightMesh(lightVertices);
+    }
+
     std::filesystem::path diffusePath;
     std::filesystem::path specularPath;
     const std::filesystem::path modelDirectory =
@@ -235,6 +260,44 @@ void Application::Render() {
     const cy::Vec4f lightPosWorld = lightRotation *
         cy::Vec4f(lightBasePos.x, lightBasePos.y, lightBasePos.z, 1.0f);
 
+    const cy::Vec3f lightWorldPosition(
+        lightPosWorld.x, lightPosWorld.y, lightPosWorld.z);
+
+    // 聚光灯始终朝向模型中心；位置仍由 Ctrl + 左键独立于相机旋转。
+    // 当光线方向接近竖直方向时切换 up 向量，避免 View 矩阵基向量退化。
+    const bool nearVertical =
+        std::abs(lightWorldPosition.x) + std::abs(lightWorldPosition.z) < 0.001f;
+    const cy::Vec3f lightUp = nearVertical
+        ? cy::Vec3f(0.0f, 0.0f, 1.0f)
+        : cy::Vec3f(0.0f, 1.0f, 0.0f);
+    const cy::Matrix4f lightView = cy::Matrix4f::View(
+        lightWorldPosition, cy::Vec3f(0.0f, 0.0f, 0.0f), lightUp);
+
+    // 根据模型包围球自动拟合聚光灯锥体，兼容不同尺寸的命令行 OBJ。
+    constexpr float Pi = 3.14159265358979323846f;
+    const float sceneRadius = std::max(m_ModelDiameter * 0.5f, 1.0f);
+    const float lightDistance = std::max(lightWorldPosition.Length(), 0.001f);
+    const float angularRadius = std::asin(std::min(sceneRadius / lightDistance, 0.95f));
+    const float lightFov = std::clamp(
+        angularRadius * 2.0f + 10.0f * Pi / 180.0f,
+        60.0f * Pi / 180.0f,
+        150.0f * Pi / 180.0f);
+    const float lightNear = std::max(0.1f, lightDistance - sceneRadius * 1.25f);
+    const float lightFar = lightDistance + sceneRadius * 2.0f;
+    const cy::Matrix4f lightProjection = cy::Matrix4f::Perspective(
+        lightFov, 1.0f, lightNear, lightFar);
+    const cy::Matrix4f lightVP = lightProjection * lightView;
+    const cy::Matrix4f lightMvp = lightVP * modelMatrix;
+
+    // --- 阴影深度 Pass：关闭阴影时跳过整个 pass，避免无意义的 GPU 绘制。---
+    RenderPassContext pipelineContext;
+    pipelineContext.shadowsEnabled = m_Renderer->IsShadowsEnabled();
+    pipelineContext.shadow = [&]() {
+        m_Renderer->BeginShadowPass();
+        m_Renderer->RenderShadowCaster(lightMvp);
+        m_Renderer->EndShadowPass();
+    };
+
     // --- 反射 Pass：渲染到反射纹理 ---
     cy::Matrix4f reflectMatrix =
         cy::Matrix4f::Translation(cy::Vec3f(0.0f, m_GroundY, 0.0f)) *
@@ -242,18 +305,19 @@ void Application::Render() {
         cy::Matrix4f::Translation(cy::Vec3f(0.0f, -m_GroundY, 0.0f));
     cy::Matrix4f reflectView = viewMatrix * reflectMatrix;
 
-    m_Renderer->BeginReflectionPass();
-    m_Renderer->RenderSkybox(projMatrix, reflectView);
-    {
+    pipelineContext.reflection = [&]() {
+        m_Renderer->BeginReflectionPass();
+        m_Renderer->RenderSkybox(projMatrix, reflectView);
         cy::Matrix4f rmvp = projMatrix * reflectView * modelMatrix;
         cy::Matrix4f rmv = reflectView * modelMatrix;
         cy::Vec4f rLight = reflectView * lightPosWorld;
         m_Renderer->RenderScene(rmvp, rmv,
-            cy::Vec3f(rLight.x, rLight.y, rLight.z), reflectView);
-    }
-    m_Renderer->EndReflectionPass();
+            cy::Vec3f(rLight.x, rLight.y, rLight.z), reflectView, lightMvp);
+        m_Renderer->EndReflectionPass();
+    };
 
     // --- 主物体 Pass：渲染到 FBO 颜色纹理 ---
+    pipelineContext.forward = [&]() {
     m_Renderer->BeginObjectPass();
 
     // 天空盒
@@ -276,7 +340,8 @@ void Application::Render() {
             cy::Matrix4f::Scale(groundSize, 1.0f, groundSize);
         cy::Matrix4f groundMvp = projMatrix * viewMatrix * groundModel;
         cy::Matrix4f reflectionVP = projMatrix * reflectView;
-        m_Renderer->RenderGroundPlane(groundMvp, groundModel, reflectionVP, cameraWorldPos);
+        m_Renderer->RenderGroundPlane(
+            groundMvp, groundModel, reflectionVP, cameraWorldPos, lightVP);
     }
 
     // 3D 物体（带环境反射的 Blinn-Phong）
@@ -284,7 +349,12 @@ void Application::Render() {
     cy::Matrix4f mvp = projMatrix * viewMatrix * modelMatrix;
     cy::Vec4f lightPosView = viewMatrix * lightPosWorld;
     m_Renderer->RenderScene(mvp, mv,
-        cy::Vec3f(lightPosView.x, lightPosView.y, lightPosView.z), viewMatrix);
+        cy::Vec3f(lightPosView.x, lightPosView.y, lightPosView.z), viewMatrix, lightMvp);
+
+    const cy::Matrix4f lightModel =
+        cy::Matrix4f::Translation(lightWorldPosition) *
+        cy::Matrix4f::Scale(0.75f, 0.75f, 0.75f);
+    m_Renderer->RenderLightObject(projMatrix * viewMatrix * lightModel);
 
     // 光源调试图标
     if (m_DrawDebugGizmos) {
@@ -296,13 +366,36 @@ void Application::Render() {
     }
 
     m_Renderer->EndObjectPass();
+    };
 
     // --- 屏幕 Pass ---
+    pipelineContext.present = [&]() {
     m_Renderer->BeginFrame(m_Width, m_Height);
     const cy::Matrix4f planeMvp =
         m_PlaneCamera.GetProjectionMatrix() * m_PlaneCamera.GetViewMatrix();
-    m_Renderer->RenderPlane(planeMvp);
+    const cy::Vec3f tessLightPosition(2.5f, 2.5f, 3.0f);
+    const cy::Matrix4f tessLightView = cy::Matrix4f::View(
+        tessLightPosition, cy::Vec3f(0.0f, 0.0f, 0.0f), cy::Vec3f(0.0f, 1.0f, 0.0f));
+    const cy::Matrix4f tessLightProjection = cy::Matrix4f::Perspective(
+        70.0f * 3.14159265358979323846f / 180.0f, 1.0f, 0.1f, 10.0f);
+    m_Renderer->RenderTessellatedPlane(
+        planeMvp,
+        tessLightProjection * tessLightView,
+        tessLightPosition,
+        cy::Vec3f(0.0f, 0.0f, 3.5f));
+    if (m_DrawDebugGizmos) {
+        // Keep the light object visible in the Project 8 presentation view.
+        const cy::Matrix4f displayLight =
+            cy::Matrix4f::Translation(cy::Vec3f(0.78f, 0.78f, 0.55f)) *
+            cy::Matrix4f::Scale(0.12f, 0.12f, 0.12f);
+        glDisable(GL_DEPTH_TEST);
+        m_Renderer->RenderLightObject(planeMvp * displayLight);
+        glEnable(GL_DEPTH_TEST);
+    }
     m_Renderer->EndFrame();
+    };
+
+    m_Renderer->ExecutePipeline(pipelineContext);
 }
 /// @brief 关闭应用程序
 void Application::Shutdown() {
@@ -412,7 +505,29 @@ void Application::KeyCallback(GLFWwindow* window, int key, int scancode, int act
             << (app->m_DrawDebugGizmos ? "ON" : "OFF") << std::endl;
     }
 
+    // S 键切换阴影显示；Renderer 内部默认值为开启。
+    if (key == GLFW_KEY_S && action == GLFW_PRESS) {
+        const bool enabled = !app->m_Renderer->IsShadowsEnabled();
+        app->m_Renderer->SetShadowsEnabled(enabled);
+        std::cout << "[Renderer] Shadows: "
+            << (enabled ? "ON" : "OFF") << std::endl;
+    }
+
     // 退出（ESC）
+    if (action == GLFW_PRESS && key == GLFW_KEY_SPACE) {
+        const bool visible = !app->m_Renderer->IsTriangulationVisible();
+        app->m_Renderer->SetTriangulationVisible(visible);
+        std::cout << "[Tessellation] Triangulation: " << (visible ? "ON" : "OFF") << std::endl;
+    }
+    if ((action == GLFW_PRESS || action == GLFW_REPEAT) && key == GLFW_KEY_LEFT) {
+        app->m_Renderer->SetTessellationLevel(app->m_Renderer->GetTessellationLevel() - 1.0f);
+        std::cout << "[Tessellation] Level: " << app->m_Renderer->GetTessellationLevel() << std::endl;
+    }
+    if ((action == GLFW_PRESS || action == GLFW_REPEAT) && key == GLFW_KEY_RIGHT) {
+        app->m_Renderer->SetTessellationLevel(app->m_Renderer->GetTessellationLevel() + 1.0f);
+        std::cout << "[Tessellation] Level: " << app->m_Renderer->GetTessellationLevel() << std::endl;
+    }
+
     if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
         glfwSetWindowShouldClose(window, true);
     }

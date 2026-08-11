@@ -9,6 +9,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 #include <glad/glad.h>
 
 
@@ -26,6 +27,14 @@ public:
 	bool Load(
 		const std::string& vertexPath,
 		const std::string& fragmentPath
+	);
+
+	bool LoadTessellation(
+		const std::string& vertexPath,
+		const std::string& tessControlPath,
+		const std::string& tessEvalPath,
+		const std::string& fragmentPath,
+		const std::string& geometryPath = {}
 	);
 
 	void Bind() const;
@@ -50,6 +59,7 @@ public:
 		const std::string& name,
 		int value
 	);
+	void SetFloat(const std::string& name, float value);
 
 private:
 	GLuint m_ProgramID = 0;
@@ -64,4 +74,5 @@ private:
 		GLenum type,
 		const char* source
 	);
+	bool LinkProgram(const std::vector<GLuint>& shaders);
 };

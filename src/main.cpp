@@ -1,23 +1,24 @@
 // SPDX-License-Identifier: MIT
-/// @file main.cpp
-/// @brief 程序入口文件
-/// @author MaiX
-/// @date 2026-08-01
-
 #include "Core/Application.h"
 
 #include <iostream>
+#include <filesystem>
 #include <string>
 
-int main(int argc, char** argv) {
-	// 第一个命令行参数为 OBJ 文件路径；无参数时使用内置模型便于调试。
-	const std::string objPath = argc > 1 ? argv[1] : "assets/models/teapot.obj";
-	if (argc <= 1) {
-		std::cout << "Usage: OpenGL_Project <model.obj>\n"
-			<< "No OBJ was specified; loading " << objPath << std::endl;
-	}
+int main(int argc, char** argv)
+{
+    std::string normalPath = argc > 1 ? argv[1] : std::string();
+    std::string displacementPath = argc > 2 ? argv[2] : std::string();
+    if (normalPath.empty()) {
+        std::cout << "Usage: OpenGL_Project <normal.png> [displacement.png]\n"
+                  << "No arguments supplied; loading the bundled Project 8 maps." << std::endl;
+        if (std::filesystem::exists("assets/models/teapot_normal.png"))
+            normalPath = "assets/models/teapot_normal.png";
+        if (std::filesystem::exists("assets/models/teapot_disp.png"))
+            displacementPath = "assets/models/teapot_disp.png";
+    }
 
-	Application app(objPath);
-	app.Run();
-	return 0;
+    Application app(normalPath, displacementPath);
+    app.Run();
+    return 0;
 }

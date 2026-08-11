@@ -49,6 +49,8 @@ set(SOURCES
     src/Renderer/Shader.cpp
     src/Renderer/Mesh.cpp
     src/Renderer/Framebuffer.cpp
+    src/Renderer/ShadowMap.cpp
+    src/Renderer/RenderPipeline.cpp
 
     # Editor
     src/Editor/LightGizmo.cpp

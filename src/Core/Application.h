@@ -22,7 +22,7 @@ class Application
 
 public:
 	/// @brief 构造函数
-    explicit Application(std::string objPath);
+    Application(std::string normalMapPath, std::string displacementMapPath);
 
 	/// @brief 析构函数，自动调用 Shutdown 释放资源
     ~Application();
@@ -42,7 +42,9 @@ private:
 	Camera m_Camera;                            ///< 离屏渲染物体所使用的摄像机
 	Camera m_PlaneCamera;                       ///< 最终显示纹理平面所使用的摄像机
 
-	std::string m_ObjPath;                      ///< 从命令行传入的 OBJ 文件路径
+	std::string m_ObjPath = "assets/models/teapot.obj";
+	std::string m_NormalMapPath;
+	std::string m_DisplacementMapPath;
 
     bool m_Initialized          = false;        ///< 应用程序是否已初始化
 

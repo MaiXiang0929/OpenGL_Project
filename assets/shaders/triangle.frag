@@ -5,6 +5,7 @@
 in vec3 fragPos;
 in vec3 fragNormal;
 in vec2 fragTexCoord;
+in vec4 fragLightSpacePos;
 
 layout(location = 0) out vec4 color;
 
@@ -17,6 +18,47 @@ uniform bool hasSpecularMap;
 // --- 环境反射 ---
 uniform samplerCube cubemap;
 uniform mat3 viewToWorld;
+
+// 深度纹理由 OpenGL 硬件执行“参考深度 <= 已记录深度”的比较。
+uniform sampler2DShadow shadowMap;
+uniform bool shadowsEnabled;
+
+float CalculateShadowVisibility(vec4 lightSpacePos, vec3 normal, vec3 lightDir)
+{
+    // 关闭时不访问深度纹理，保持原有光照结果。
+    if (!shadowsEnabled) {
+        return 1.0;
+    }
+
+    if (lightSpacePos.w <= 0.0) {
+        return 0.0;
+    }
+
+    // OpenGL 裁剪空间 [-1, 1] 映射到深度纹理空间 [0, 1]。
+    vec3 projected = lightSpacePos.xyz / lightSpacePos.w;
+    projected = projected * 0.5 + 0.5;
+
+    // 透视投影范围即聚光灯光锥，范围外没有直射光。
+    if (projected.x < 0.0 || projected.x > 1.0 ||
+        projected.y < 0.0 || projected.y > 1.0 ||
+        projected.z < 0.0 || projected.z > 1.0) {
+        return 0.0;
+    }
+
+    // 斜向表面使用更大的 bias，兼顾自阴影与 shadow acne。
+    float bias = max(0.0025 * (1.0 - dot(normal, lightDir)), 0.0005);
+    vec2 texelSize = 1.0 / vec2(textureSize(shadowMap, 0));
+    float visibility = 0.0;
+    for (int x = -1; x <= 1; ++x) {
+        for (int y = -1; y <= 1; ++y) {
+            vec2 offset = vec2(x, y) * texelSize;
+            visibility += texture(
+                shadowMap,
+                vec3(projected.xy + offset, projected.z - bias));
+        }
+    }
+    return visibility / 9.0;
+}
 
 void main()
 {
@@ -34,14 +76,16 @@ void main()
 
     // Diffuse
     vec3 lightDir = normalize(lightPos - fragPos);
+    float visibility = CalculateShadowVisibility(
+        fragLightSpacePos, norm, lightDir);
     float diff = max(dot(norm, lightDir), 0.0);
-    vec3 diffuse = diff * diffuseColor * lightIntensity;
+    vec3 diffuse = visibility * diff * diffuseColor * lightIntensity;
 
     // Specular (镜面高光 - Blinn)
     vec3 viewDir = normalize(-fragPos);
     vec3 halfwayDir = normalize(lightDir + viewDir);
     float spec = pow(max(dot(norm, halfwayDir), 0.0), shininess);
-    vec3 specular = spec * specularColor * lightIntensity;
+    vec3 specular = visibility * spec * specularColor * lightIntensity;
 
     // --- 环境反射 ---
     // 计算 view space 中的反射方向，再变换到 world space 采样 cubemap

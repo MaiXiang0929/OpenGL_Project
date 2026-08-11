@@ -37,6 +37,8 @@ public:
 
     void Draw() const;
 
+    void DrawPatches() const;
+
     int GetVertexCount() const;
  
 
