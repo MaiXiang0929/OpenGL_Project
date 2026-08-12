@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "Renderer/Passes/ForwardPass.h"
+#include "Renderer/Passes/EditorPrimitivePass.h"
 #include "Renderer/Passes/PresentPass.h"
 #include "Renderer/Passes/ReflectionPass.h"
 #include "RenderPass.h"
@@ -33,6 +34,7 @@ public:
 
 private:
     ForwardPass m_ForwardPass;
+    EditorPrimitivePass m_EditorPrimitivePass;
     ShadowPass m_ShadowPass;
     ReflectionPass m_ReflectionPass;
     PresentPass m_PresentPass;

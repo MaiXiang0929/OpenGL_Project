@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.15)
 
 project(OpenGL_Project)
 
+include(CTest)
+
 # ============================
 # C++ 标准
 # ============================
@@ -50,8 +52,17 @@ set(SOURCES
     # Renderer Pipeline
     src/Renderer/Pipeline/RenderPipeline.cpp
 
+    # Renderer Scene
+    src/Renderer/Scene/RenderScene.cpp
+    src/Renderer/Scene/PrimitiveSceneProxy.cpp
+
+    # Renderer View
+    src/Renderer/View/Frustum.cpp
+    src/Renderer/View/LightRenderData.cpp
+
     # Renderer Passes
     src/Renderer/Passes/ForwardPass.cpp
+    src/Renderer/Passes/EditorPrimitivePass.cpp
     src/Renderer/Passes/ShadowPass.cpp
     src/Renderer/Passes/ReflectionPass.cpp
     src/Renderer/Passes/PresentPass.cpp
@@ -64,9 +75,6 @@ set(SOURCES
     src/Renderer/Resources/CubemapTexture.cpp
     src/Renderer/Resources/Framebuffer.cpp
     src/Renderer/Resources/ShadowMap.cpp
-
-    # Editor
-    src/Editor/LightGizmo.cpp
 
     # GLAD
     ThirdParty/glad/src/glad.c
@@ -167,3 +175,53 @@ source_group(
 
     ${SOURCES}
 )
+
+if(BUILD_TESTING)
+    add_executable(
+        FrustumTests
+        tests/Renderer/View/FrustumTests.cpp
+        src/Renderer/View/Frustum.cpp
+        src/Renderer/Scene/PrimitiveSceneProxy.cpp
+    )
+
+    target_include_directories(
+        FrustumTests
+        PRIVATE
+        ${SRC_DIR}
+        ${THIRD_PARTY_DIR}/cyCodeBase
+    )
+
+    add_test(NAME FrustumTests COMMAND FrustumTests)
+
+    add_executable(
+        RenderSceneTests
+        tests/Renderer/Scene/RenderSceneTests.cpp
+        src/Renderer/Scene/RenderScene.cpp
+        src/Renderer/Scene/PrimitiveSceneProxy.cpp
+        src/Renderer/View/Frustum.cpp
+    )
+
+    target_include_directories(
+        RenderSceneTests
+        PRIVATE
+        ${SRC_DIR}
+        ${THIRD_PARTY_DIR}/cyCodeBase
+    )
+
+    add_test(NAME RenderSceneTests COMMAND RenderSceneTests)
+
+    add_executable(
+        LightRenderDataTests
+        tests/Renderer/View/LightRenderDataTests.cpp
+        src/Renderer/View/LightRenderData.cpp
+    )
+
+    target_include_directories(
+        LightRenderDataTests
+        PRIVATE
+        ${SRC_DIR}
+        ${THIRD_PARTY_DIR}/cyCodeBase
+    )
+
+    add_test(NAME LightRenderDataTests COMMAND LightRenderDataTests)
+endif()

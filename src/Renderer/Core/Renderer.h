@@ -7,6 +7,9 @@
 
 #pragma once
 
+#include <array>
+#include <cstddef>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -15,6 +18,7 @@
 #include "Renderer/Resources/Mesh.h"
 #include "Renderer/Pipeline/RenderPipeline.h"
 #include "Renderer/Pipeline/RenderSettings.h"
+#include "Renderer/Scene/RenderScene.h"
 
 /// @brief 渲染资源的所有者与管线门面。
 /// @details Renderer 不再实现具体 Pass，只负责准备资源上下文并启动 RenderPipeline。
@@ -27,11 +31,22 @@ public:
     Renderer(const Renderer&) = delete;
     Renderer& operator=(const Renderer&) = delete;
 
-    void Init();
+    bool Init();
 
-    void SetMesh(const std::vector<Vertex>& vertices);
-    void SetLightMesh(const std::vector<Vertex>& vertices);
-    void SetMaterial(Material material);
+    PrimitiveId AddPrimitive(
+        const std::vector<Vertex>& vertices,
+        Material material,
+        const cy::Matrix4f& localToWorld,
+        PrimitiveBounds bounds = {},
+        bool castsShadow = true,
+        bool translucent = false);
+    bool UpdatePrimitiveTransform(
+        PrimitiveId id,
+        const cy::Matrix4f& localToWorld);
+
+    LightId AddLight(LightSceneProxy light);
+    bool UpdateLight(LightId id, const LightSceneProxy& light);
+
     void LoadCubemap(const std::string& directoryPath);
 
     void ExecutePipeline(RenderFrameData& frame);
@@ -39,6 +54,15 @@ public:
 
     void SetShadowsEnabled(bool enabled) { m_ShadowsEnabled = enabled; }
     bool IsShadowsEnabled() const { return m_ShadowsEnabled; }
+
+    void SetEditorPrimitivesEnabled(bool enabled)
+    {
+        m_EditorPrimitivesEnabled = enabled;
+    }
+    bool AreEditorPrimitivesEnabled() const
+    {
+        return m_EditorPrimitivesEnabled;
+    }
 
     void SetTessellationEnabled(bool enabled)
     {
@@ -65,15 +89,22 @@ public:
     }
 
 private:
-    Mesh m_SceneMesh;
-    Mesh m_LightMesh;
+    void LogMainViewStatsIfChanged(const RenderView& view);
+
     Mesh m_PresentMesh;
     Mesh m_SkyboxMesh;
     Mesh m_GroundMesh;
 
-    Material m_MainMaterial;
+    std::vector<std::unique_ptr<Mesh>> m_PrimitiveMeshes;
+    std::vector<std::unique_ptr<Material>> m_PrimitiveMaterials;
+    RenderScene m_RenderScene;
     CubemapTexture m_Cubemap;
     RenderPipeline m_RenderPipeline;
     TessellationSettings m_Tessellation;
+    std::array<std::size_t, 7> m_LastMainViewStats{};
+    RenderResourceId m_NextMaterialId = 0;
+    RenderResourceId m_NextMeshId = 0;
+    bool m_HasMainViewStats = false;
     bool m_ShadowsEnabled = true;
+    bool m_EditorPrimitivesEnabled = true;
 };

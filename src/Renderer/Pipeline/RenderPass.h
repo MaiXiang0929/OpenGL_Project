@@ -5,10 +5,11 @@
 
 #include "cyMatrix.h"
 #include "cyVector.h"
+#include "Renderer/Scene/LightSceneProxy.h"
 
 class CubemapTexture;
-class Material;
 class Mesh;
+struct RenderView;
 struct TessellationSettings;
 
 enum class RenderPassType
@@ -16,6 +17,7 @@ enum class RenderPassType
     Shadow,
     Reflection,
     Forward,
+    EditorPrimitive,
     Present
 };
 
@@ -28,29 +30,20 @@ struct RenderFrameData
 
     cy::Matrix4f projection;
     cy::Matrix4f view;
-    cy::Matrix4f model;
-    cy::Matrix4f mvp;
-    cy::Matrix4f mv;
-
     cy::Matrix4f lightVP;
-    cy::Matrix4f lightMvp;
-    cy::Vec3f lightWorldPosition;
-    cy::Vec3f lightPositionView;
+    LightId shadowLightId = InvalidLightId;
 
     cy::Matrix4f reflectionView;
-    cy::Matrix4f reflectionMvp;
-    cy::Matrix4f reflectionMv;
-    cy::Vec3f reflectionLightPositionView;
 
     cy::Matrix4f groundMvp;
     cy::Matrix4f groundModel;
     cy::Matrix4f reflectionVP;
     cy::Vec3f cameraWorldPosition;
 
-    cy::Matrix4f lightObjectMvp;
     cy::Matrix4f presentMvp;
 
     bool shadowsEnabled = true;
+    bool editorPrimitivesEnabled = true;
 };
 
 /// @brief RenderPipeline 在各 Pass 之间共享的执行上下文。
@@ -59,12 +52,12 @@ struct RenderPassContext
 {
     RenderFrameData& frame;
 
-    Mesh& sceneMesh;
-    Mesh& lightMesh;
+    RenderView& mainView;
+    RenderView& reflectionView;
+    RenderView& shadowView;
     Mesh& presentMesh;
     Mesh& skyboxMesh;
     Mesh& groundMesh;
-    Material& material;
     CubemapTexture& cubemap;
     TessellationSettings& tessellation;
 

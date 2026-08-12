@@ -12,15 +12,21 @@
 #include <iostream>
 #include <utility>
 
+#include "Renderer/View/RenderView.h"
+
 Renderer::Renderer() = default;
 Renderer::~Renderer() = default;
 
-void Renderer::Init()
+bool Renderer::Init()
 {
     glEnable(GL_DEPTH_TEST);
 
     if (!m_RenderPipeline.Init())
-        std::cerr << "[Renderer] RenderPipeline 初始化失败。" << std::endl;
+    {
+        std::cerr << "[Renderer] RenderPipeline initialization failed."
+                  << std::endl;
+        return false;
+    }
 
     // Present Pass 使用的屏幕四边形，只负责显示 ForwardPass 颜色纹理。
     const std::vector<Vertex> presentVertices = {
@@ -53,21 +59,52 @@ void Renderer::Init()
     m_GroundMesh.Upload(groundVertices);
 
     LoadCubemap("assets/models/cubemap");
+    return true;
 }
 
-void Renderer::SetMesh(const std::vector<Vertex>& vertices)
+PrimitiveId Renderer::AddPrimitive(
+    const std::vector<Vertex>& vertices,
+    Material material,
+    const cy::Matrix4f& localToWorld,
+    PrimitiveBounds bounds,
+    bool castsShadow,
+    bool translucent)
 {
-    m_SceneMesh.Upload(vertices);
+    auto mesh = std::make_unique<Mesh>();
+    mesh->Upload(vertices);
+    auto materialResource = std::make_unique<Material>(std::move(material));
+
+    PrimitiveSceneProxy proxy;
+    proxy.mesh = mesh.get();
+    proxy.material = materialResource.get();
+    proxy.shaderId = DefaultSurfaceShaderId;
+    proxy.materialId = m_NextMaterialId++;
+    proxy.meshId = m_NextMeshId++;
+    proxy.localToWorld = localToWorld;
+    proxy.localBounds = bounds;
+    proxy.castsShadow = castsShadow;
+    proxy.translucent = translucent;
+
+    m_PrimitiveMeshes.push_back(std::move(mesh));
+    m_PrimitiveMaterials.push_back(std::move(materialResource));
+    return m_RenderScene.AddPrimitive(proxy);
 }
 
-void Renderer::SetLightMesh(const std::vector<Vertex>& vertices)
+bool Renderer::UpdatePrimitiveTransform(
+    PrimitiveId id,
+    const cy::Matrix4f& localToWorld)
 {
-    m_LightMesh.Upload(vertices);
+    return m_RenderScene.UpdatePrimitiveTransform(id, localToWorld);
 }
 
-void Renderer::SetMaterial(Material material)
+LightId Renderer::AddLight(LightSceneProxy light)
 {
-    m_MainMaterial = std::move(material);
+    return m_RenderScene.AddLight(light);
+}
+
+bool Renderer::UpdateLight(LightId id, const LightSceneProxy& light)
+{
+    return m_RenderScene.UpdateLight(id, light);
 }
 
 void Renderer::LoadCubemap(const std::string& directoryPath)
@@ -82,20 +119,78 @@ void Renderer::LoadCubemap(const std::string& directoryPath)
 void Renderer::ExecutePipeline(RenderFrameData& frame)
 {
     frame.shadowsEnabled = m_ShadowsEnabled;
+    frame.editorPrimitivesEnabled = m_EditorPrimitivesEnabled;
+
+    RenderView mainView;
+    mainView.type = RenderViewType::Main;
+    mainView.view = frame.view;
+    mainView.projection = frame.projection;
+    mainView.viewProjection = frame.projection * frame.view;
+    mainView.frustum = Frustum::FromViewProjection(mainView.viewProjection);
+    mainView.cameraWorldPosition = frame.cameraWorldPosition;
+    mainView.viewportWidth = frame.viewportWidth;
+    mainView.viewportHeight = frame.viewportHeight;
+    m_RenderScene.BuildRenderView(mainView);
+    LogMainViewStatsIfChanged(mainView);
+
+    RenderView reflectionView;
+    reflectionView.type = RenderViewType::Reflection;
+    reflectionView.view = frame.reflectionView;
+    reflectionView.projection = frame.projection;
+    reflectionView.viewProjection = frame.projection * frame.reflectionView;
+    reflectionView.frustum = Frustum::FromViewProjection(
+        reflectionView.viewProjection);
+    reflectionView.cameraWorldPosition = frame.cameraWorldPosition;
+    reflectionView.viewportWidth = frame.viewportWidth;
+    reflectionView.viewportHeight = frame.viewportHeight;
+    m_RenderScene.BuildRenderView(reflectionView);
+
+    RenderView shadowView;
+    shadowView.type = RenderViewType::Shadow;
+    shadowView.viewProjection = frame.lightVP;
+    shadowView.frustum = Frustum::FromViewProjection(frame.lightVP);
+    m_RenderScene.BuildRenderView(shadowView);
 
     // Renderer 在这里完成资源注入，Application 和 RenderPipeline 都不直接拥有资源。
     RenderPassContext context{
         frame,
-        m_SceneMesh,
-        m_LightMesh,
+        mainView,
+        reflectionView,
+        shadowView,
         m_PresentMesh,
         m_SkyboxMesh,
         m_GroundMesh,
-        m_MainMaterial,
         m_Cubemap,
         m_Tessellation
     };
     m_RenderPipeline.Execute(context);
+}
+
+void Renderer::LogMainViewStatsIfChanged(const RenderView& view)
+{
+    const std::array<std::size_t, 7> stats = {
+        view.sourcePrimitiveCount,
+        view.visiblePrimitiveCount,
+        view.culledPrimitiveCount,
+        view.opaqueDrawCount,
+        view.opaqueShaderGroupCount,
+        view.opaqueMaterialGroupCount,
+        view.opaqueMeshGroupCount
+    };
+    if (m_HasMainViewStats && stats == m_LastMainViewStats)
+        return;
+
+    m_LastMainViewStats = stats;
+    m_HasMainViewStats = true;
+    std::cout
+        << "[RenderView][Main] source=" << stats[0]
+        << " visible=" << stats[1]
+        << " culled=" << stats[2]
+        << " opaqueDraws=" << stats[3]
+        << " shaderGroups=" << stats[4]
+        << " materialGroups=" << stats[5]
+        << " meshGroups=" << stats[6]
+        << std::endl;
 }
 
 void Renderer::ReloadShaders()

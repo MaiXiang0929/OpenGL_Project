@@ -7,6 +7,8 @@
 
 #pragma once
 
+#include <cstdint>
+#include <limits>
 #include <memory>
 #include <string>
 #include "cyVector.h"
@@ -14,7 +16,6 @@
 #include "Camera.h"
 
 struct GLFWwindow;
-class LightGizmo;
 class Renderer;
 
 /// @brief 应用程序核心管理类
@@ -40,7 +41,6 @@ private:
     GLFWwindow* m_Window        = nullptr;      ///< GLFW 窗口对象的指针句柄
 
     Renderer* m_Renderer        = nullptr;      ///< 渲染器对象的指针句柄
-    std::unique_ptr<LightGizmo> m_LightGizmo;   ///< Editor overlay，由 Application 管理生命周期
 
 	Camera m_Camera;                            ///< 离屏渲染物体所使用的摄像机
 	Camera m_PlaneCamera;                       ///< 最终显示纹理平面所使用的摄像机
@@ -64,11 +64,12 @@ private:
     bool m_CtrlDown             = false;       ///< Ctrl 是否按下，用于切换到光源旋转操作
     float m_LightRotX           = 0.0f;        ///< 光源绕 X 轴的旋转角
     float m_LightRotY           = 0.0f;        ///< 光源绕 Y 轴的旋转角
-    bool m_DrawDebugGizmos      = true;        ///< 是否绘制黄色光源位置图标
 
     cy::Vec3f m_ObjCenter;                     ///< 模型包围盒中心
     float m_GroundY         = 0.0f;            ///< 反射地面 Y 坐标（模型包围盒底部）
     float m_ModelDiameter   = 0.0f;            ///< 模型包围盒直径，用于缩放地面
+    std::uint32_t m_MainPrimitiveId = std::numeric_limits<std::uint32_t>::max();
+    std::uint32_t m_MainLightId = std::numeric_limits<std::uint32_t>::max();
 
 private:
     /// @brief 初始化应用程序

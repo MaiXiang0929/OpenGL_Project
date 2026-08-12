@@ -9,7 +9,8 @@
 #include "RenderPipeline.h"
 
 RenderPipeline::RenderPipeline()
-    : m_ReflectionPass(m_ForwardPass)
+    : m_EditorPrimitivePass(m_ForwardPass)
+    , m_ReflectionPass(m_ForwardPass)
     , m_PresentPass(m_ForwardPass)
 {
     // 顺序由 GPU 资源依赖决定：阴影和反射必须先于主颜色与 Present。
@@ -17,6 +18,7 @@ RenderPipeline::RenderPipeline()
         &m_ShadowPass,
         &m_ReflectionPass,
         &m_ForwardPass,
+        &m_EditorPrimitivePass,
         &m_PresentPass
     };
 }
@@ -26,8 +28,10 @@ bool RenderPipeline::Init()
     const bool forwardLoaded = m_ForwardPass.Init(1024, 1024);
     const bool shadowLoaded = m_ShadowPass.Init(2048, 2048);
     const bool reflectionLoaded = m_ReflectionPass.Init(512, 512);
+    const bool editorPrimitivesLoaded = m_EditorPrimitivePass.Init();
     const bool presentLoaded = m_PresentPass.Init();
-    return forwardLoaded && shadowLoaded && reflectionLoaded && presentLoaded;
+    return forwardLoaded && shadowLoaded && reflectionLoaded &&
+        editorPrimitivesLoaded && presentLoaded;
 }
 
 bool RenderPipeline::ReloadShaders()
@@ -35,6 +39,7 @@ bool RenderPipeline::ReloadShaders()
     return m_ForwardPass.ReloadShaders() &&
         m_ShadowPass.ReloadShaders() &&
         m_ReflectionPass.ReloadShaders() &&
+        m_EditorPrimitivePass.ReloadShaders() &&
         m_PresentPass.ReloadShaders();
 }
 

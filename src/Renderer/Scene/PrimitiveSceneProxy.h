@@ -1,0 +1,45 @@
+// SPDX-License-Identifier: MIT
+#pragma once
+
+#include <cstdint>
+#include <limits>
+
+#include "cyMatrix.h"
+#include "cyVector.h"
+
+class Material;
+class Mesh;
+
+using PrimitiveId = std::uint32_t;
+constexpr PrimitiveId InvalidPrimitiveId =
+    std::numeric_limits<PrimitiveId>::max();
+
+using RenderResourceId = std::uint32_t;
+constexpr RenderResourceId InvalidRenderResourceId =
+    std::numeric_limits<RenderResourceId>::max();
+constexpr RenderResourceId DefaultSurfaceShaderId = 0;
+
+struct PrimitiveBounds
+{
+    cy::Vec3f center{ 0.0f, 0.0f, 0.0f };
+    float radius = 0.0f;
+};
+
+PrimitiveBounds TransformBounds(
+    const PrimitiveBounds& localBounds,
+    const cy::Matrix4f& localToWorld);
+
+struct PrimitiveSceneProxy
+{
+    PrimitiveId id = InvalidPrimitiveId;
+    Mesh* mesh = nullptr;
+    Material* material = nullptr;
+    RenderResourceId shaderId = DefaultSurfaceShaderId;
+    RenderResourceId materialId = InvalidRenderResourceId;
+    RenderResourceId meshId = InvalidRenderResourceId;
+    cy::Matrix4f localToWorld = cy::Matrix4f::Identity();
+    PrimitiveBounds localBounds;
+    bool visible = true;
+    bool castsShadow = true;
+    bool translucent = false;
+};

@@ -7,7 +7,6 @@
 
 #include"Application.h"
 #include "Renderer/Core/Renderer.h"
-#include "Editor/LightGizmo.h"
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -145,12 +144,10 @@ bool Application::Init() {
 
     // 开启 OpenGL 默认状态
 	m_Renderer = new Renderer();
-	m_Renderer->Init();
-    m_LightGizmo = std::make_unique<LightGizmo>();
-    m_LightGizmo->Init(
-        "assets/shaders/debug/billboard.vert",
-        "assets/shaders/debug/billboard.frag");
-
+	if (!m_Renderer->Init()) {
+        std::cerr << "[Error] Renderer initialization failed." << std::endl;
+        return false;
+    }
     // ==========================================
     // 第一阶段妥协：在 App 层临时加载网格和纹理
     // ==========================================
@@ -253,29 +250,6 @@ bool Application::Init() {
             vertices.push_back(vertex);
         }
     }
-    m_Renderer->SetMesh(vertices);
-
-    // Load the supplied light model for an in-scene light representation.
-    cy::TriMesh lightMesh;
-    if (lightMesh.LoadFromFileObj("assets/models/light/light.obj")) {
-        lightMesh.ComputeBoundingBox();
-        if (!lightMesh.HasNormals()) lightMesh.ComputeNormals();
-        std::vector<Vertex> lightVertices;
-        lightVertices.reserve(static_cast<size_t>(lightMesh.NF()) * 3);
-        for (int i = 0; i < lightMesh.NF(); ++i) {
-            const auto face = lightMesh.F(i);
-            const auto faceNormal = lightMesh.FN(i);
-            for (int j = 0; j < 3; ++j) {
-                Vertex vertex{};
-                vertex.Position = lightMesh.V(face.v[j]);
-                vertex.Normal = lightMesh.VN(faceNormal.v[j]);
-                vertex.TexCoord = cy::Vec2f(0.0f, 0.0f);
-                lightVertices.push_back(vertex);
-            }
-        }
-        m_Renderer->SetLightMesh(lightVertices);
-    }
-
     std::filesystem::path diffusePath;
     std::filesystem::path specularPath;
     Material mainMaterial;
@@ -320,7 +294,43 @@ bool Application::Init() {
         mainMaterial.SetDisplacementMap(Texture2D::Load(
             m_DisplacementMapPath, TextureColorSpace::Linear));
     }
-    m_Renderer->SetMaterial(std::move(mainMaterial));
+    PrimitiveBounds bounds;
+    bounds.center = m_ObjCenter;
+    bounds.radius = m_ModelDiameter * 0.5f;
+    m_MainPrimitiveId = m_Renderer->AddPrimitive(
+        vertices,
+        std::move(mainMaterial),
+        cy::Matrix4f::Translation(-m_ObjCenter),
+        bounds);
+
+    LightSceneProxy mainLight;
+    mainLight.type = LightType::Spot;
+    mainLight.position = cy::Vec3f(0.0f, 10.0f, 20.0f);
+    mainLight.direction = cy::Vec3f(0.0f, 0.0f, 0.0f) - mainLight.position;
+    mainLight.direction.Normalize();
+    mainLight.color = cy::Vec3f(1.0f, 0.95f, 0.85f);
+    mainLight.intensity = 5.0f;
+    mainLight.range = 30.0f;
+    mainLight.outerConeAngle = 30.0f * 3.14159265358979323846f / 180.0f;
+    m_MainLightId = m_Renderer->AddLight(mainLight);
+
+    LightSceneProxy directionalFill;
+    directionalFill.type = LightType::Directional;
+    directionalFill.direction = cy::Vec3f(-0.35f, -1.0f, -0.2f);
+    directionalFill.direction.Normalize();
+    directionalFill.color = cy::Vec3f(0.35f, 0.5f, 1.0f);
+    directionalFill.intensity = 0.35f;
+    directionalFill.castsShadow = false;
+    m_Renderer->AddLight(directionalFill);
+
+    LightSceneProxy pointFill;
+    pointFill.type = LightType::Point;
+    pointFill.position = cy::Vec3f(-8.0f, 4.0f, 5.0f);
+    pointFill.color = cy::Vec3f(1.0f, 0.2f, 0.08f);
+    pointFill.intensity = 0.9f;
+    pointFill.range = 18.0f;
+    pointFill.castsShadow = false;
+    m_Renderer->AddLight(pointFill);
 
     glfwGetCursorPos(m_Window, &m_LastX, &m_LastY);
 
@@ -374,8 +384,6 @@ void Application::Render() {
     const cy::Matrix4f lightProjection = cy::Matrix4f::Perspective(
         lightFov, 1.0f, lightNear, lightFar);
     const cy::Matrix4f lightVP = lightProjection * lightView;
-    const cy::Matrix4f lightMvp = lightVP * modelMatrix;
-
     // 反射视图仍由 Application 根据场景地面位置计算，Pass 只消费结果。
     const cy::Matrix4f reflectMatrix =
         cy::Matrix4f::Translation(cy::Vec3f(0.0f, m_GroundY, 0.0f)) *
@@ -396,14 +404,18 @@ void Application::Render() {
         cy::Matrix4f::Translation(cy::Vec3f(
             -m_ObjCenter.x, m_GroundY, -m_ObjCenter.z)) *
         cy::Matrix4f::Scale(groundSize, 1.0f, groundSize);
-    const cy::Matrix4f lightModel =
-        cy::Matrix4f::Translation(lightWorldPosition) *
-        cy::Matrix4f::Scale(0.75f, 0.75f, 0.75f);
+    m_Renderer->UpdatePrimitiveTransform(m_MainPrimitiveId, modelMatrix);
 
-    const cy::Matrix4f mv = viewMatrix * modelMatrix;
-    const cy::Matrix4f mvp = projMatrix * mv;
-    const cy::Vec4f lightPosView = viewMatrix * lightPosWorld;
-    const cy::Vec4f reflectionLight = reflectView * lightPosWorld;
+    LightSceneProxy mainLight;
+    mainLight.type = LightType::Spot;
+    mainLight.position = lightWorldPosition;
+    mainLight.direction = cy::Vec3f(0.0f, 0.0f, 0.0f) - lightWorldPosition;
+    mainLight.direction.Normalize();
+    mainLight.color = cy::Vec3f(1.0f, 0.95f, 0.85f);
+    mainLight.intensity = 5.0f;
+    mainLight.range = 30.0f;
+    mainLight.outerConeAngle = 30.0f * 3.14159265358979323846f / 180.0f;
+    m_Renderer->UpdateLight(m_MainLightId, mainLight);
 
     // Application 只提交强类型帧数据，不再创建任何 Pass callback。
     RenderFrameData frame;
@@ -411,37 +423,17 @@ void Application::Render() {
     frame.viewportHeight = m_Height;
     frame.projection = projMatrix;
     frame.view = viewMatrix;
-    frame.model = modelMatrix;
-    frame.mvp = mvp;
-    frame.mv = mv;
     frame.lightVP = lightVP;
-    frame.lightMvp = lightMvp;
-    frame.lightWorldPosition = lightWorldPosition;
-    frame.lightPositionView = cy::Vec3f(
-        lightPosView.x, lightPosView.y, lightPosView.z);
+    frame.shadowLightId = m_MainLightId;
     frame.reflectionView = reflectView;
-    frame.reflectionMvp = projMatrix * reflectView * modelMatrix;
-    frame.reflectionMv = reflectView * modelMatrix;
-    frame.reflectionLightPositionView = cy::Vec3f(
-        reflectionLight.x, reflectionLight.y, reflectionLight.z);
     frame.groundModel = groundModel;
     frame.groundMvp = projMatrix * viewMatrix * groundModel;
     frame.reflectionVP = projMatrix * reflectView;
     frame.cameraWorldPosition = cameraWorldPos;
-    frame.lightObjectMvp = projMatrix * viewMatrix * lightModel;
     frame.presentMvp =
         m_PlaneCamera.GetProjectionMatrix() * m_PlaneCamera.GetViewMatrix();
     m_Renderer->ExecutePipeline(frame);
 
-    // Editor overlay 在场景管线完成后绘制到窗口目标，不进入 Renderer Pass 依赖。
-    if (m_DrawDebugGizmos)
-    {
-        m_LightGizmo->Draw(
-            frame.projection,
-            frame.view,
-            frame.lightWorldPosition,
-            1.0f);
-    }
 }
 /// @brief 关闭应用程序
 void Application::Shutdown() {
@@ -454,9 +446,6 @@ void Application::Shutdown() {
 		m_Renderer = nullptr;
 	}
 
-    // LightGizmo 持有 OpenGL 对象，必须在 GLFW context 销毁前释放。
-    m_LightGizmo.reset();
-    
 	// 释放 GLFW 窗口资源
     if (m_Window) {
 		glfwDestroyWindow(m_Window);
@@ -547,11 +536,12 @@ void Application::KeyCallback(GLFWwindow* window, int key, int scancode, int act
         app->m_Camera.ToggleProjectionMode();
     }
 
-    // L 键切换黄色光源位置图标；只控制显示，不影响实际光照计算。
+    // L 键切换光源编辑器图元；只控制显示，不影响实际光照计算。
     if (key == GLFW_KEY_L && action == GLFW_PRESS) {
-        app->m_DrawDebugGizmos = !app->m_DrawDebugGizmos;
-        std::cout << "[Editor] Light Gizmo: "
-            << (app->m_DrawDebugGizmos ? "ON" : "OFF") << std::endl;
+        const bool enabled = !app->m_Renderer->AreEditorPrimitivesEnabled();
+        app->m_Renderer->SetEditorPrimitivesEnabled(enabled);
+        std::cout << "[Editor] Light Primitives: "
+            << (enabled ? "ON" : "OFF") << std::endl;
     }
 
     // S 键切换阴影显示；Renderer 内部默认值为开启。

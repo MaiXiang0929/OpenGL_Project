@@ -30,9 +30,27 @@ struct MaterialData
 };
 
 uniform MaterialData material;
-uniform vec3 lightPos;
-uniform vec3 lightColor;
-uniform float lightIntensity;
+
+const int MAX_FORWARD_LIGHTS = 16;
+const int LIGHT_TYPE_DIRECTIONAL = 0;
+const int LIGHT_TYPE_POINT = 1;
+const int LIGHT_TYPE_SPOT = 2;
+
+struct LightData
+{
+    vec4 positionAndType;
+    vec4 directionAndRange;
+    vec4 colorAndIntensity;
+    vec4 spotAnglesAndShadow;
+};
+
+layout(std140) uniform ForwardLights
+{
+    LightData lights[MAX_FORWARD_LIGHTS];
+};
+
+uniform int lightCount;
+uniform int shadowLightIndex;
 uniform samplerCube cubemap;
 uniform mat3 viewToWorld;
 uniform sampler2DShadow shadowMap;
@@ -69,6 +87,25 @@ float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
 vec3 FresnelSchlick(float cosTheta, vec3 f0)
 {
     return f0 + (1.0 - f0) * pow(1.0 - clamp(cosTheta, 0.0, 1.0), 5.0);
+}
+
+float CalculateDistanceAttenuation(float distanceToLight, float range)
+{
+    float normalizedDistance = distanceToLight / max(range, 0.0001);
+    float window = clamp(
+        1.0 - pow(normalizedDistance, 4.0), 0.0, 1.0);
+    return window * window;
+}
+
+float CalculateSpotAttenuation(
+    vec3 surfaceToLight,
+    vec3 lightDirection,
+    float innerConeCos,
+    float outerConeCos)
+{
+    vec3 lightToSurface = -surfaceToLight;
+    float coneCos = dot(lightToSurface, normalize(lightDirection));
+    return smoothstep(outerConeCos, innerConeCos, coneCos);
 }
 
 float CalculateShadowVisibility(vec4 lightSpacePos, vec3 normal, vec3 lightDir)
@@ -130,26 +167,60 @@ void main()
     float ao = clamp(material.ambientOcclusion, 0.0, 1.0);
 
     vec3 N = ResolveSurfaceNormal();
-    vec3 L = normalize(lightPos - fragPos);
     vec3 V = normalize(-fragPos);
-    vec3 H = normalize(V + L);
-    float visibility = CalculateShadowVisibility(
-        fragLightSpacePos, N, L);
 
     vec3 f0 = mix(vec3(0.04) * specularTint, albedo, metallic);
-    float distribution = DistributionGGX(N, H, roughness);
-    float geometry = GeometrySmith(N, V, L, roughness);
-    vec3 fresnel = FresnelSchlick(max(dot(H, V), 0.0), f0);
-
     float nDotV = max(dot(N, V), 0.0);
-    float nDotL = max(dot(N, L), 0.0);
-    vec3 specular = distribution * geometry * fresnel /
-        max(4.0 * nDotV * nDotL, 0.0001);
+    vec3 directLighting = vec3(0.0);
+    for (int lightIndex = 0; lightIndex < lightCount; ++lightIndex)
+    {
+        LightData light = lights[lightIndex];
+        int lightType = int(light.positionAndType.w + 0.5);
+        vec3 L;
+        float attenuation = 1.0;
 
-    vec3 diffuseWeight = (vec3(1.0) - fresnel) * (1.0 - metallic);
-    vec3 radiance = lightColor * max(lightIntensity, 0.0);
-    vec3 directLighting = (diffuseWeight * albedo / PI + specular) *
-        radiance * nDotL * visibility;
+        if (lightType == LIGHT_TYPE_DIRECTIONAL)
+        {
+            L = normalize(-light.directionAndRange.xyz);
+        }
+        else
+        {
+            vec3 toLight = light.positionAndType.xyz - fragPos;
+            float distanceToLight = length(toLight);
+            L = distanceToLight > 0.0001
+                ? toLight / distanceToLight
+                : vec3(0.0, 1.0, 0.0);
+            attenuation = CalculateDistanceAttenuation(
+                distanceToLight, light.directionAndRange.w);
+            if (lightType == LIGHT_TYPE_SPOT)
+            {
+                attenuation *= CalculateSpotAttenuation(
+                    L,
+                    light.directionAndRange.xyz,
+                    light.spotAnglesAndShadow.x,
+                    light.spotAnglesAndShadow.y);
+            }
+        }
+
+        float nDotL = max(dot(N, L), 0.0);
+        if (nDotL <= 0.0 || attenuation <= 0.0)
+            continue;
+
+        vec3 H = normalize(V + L);
+        float distribution = DistributionGGX(N, H, roughness);
+        float geometry = GeometrySmith(N, V, L, roughness);
+        vec3 fresnel = FresnelSchlick(max(dot(H, V), 0.0), f0);
+        vec3 specular = distribution * geometry * fresnel /
+            max(4.0 * nDotV * nDotL, 0.0001);
+        vec3 diffuseWeight = (vec3(1.0) - fresnel) * (1.0 - metallic);
+        float visibility = lightIndex == shadowLightIndex
+            ? CalculateShadowVisibility(fragLightSpacePos, N, L)
+            : 1.0;
+        vec3 radiance = light.colorAndIntensity.rgb *
+            light.colorAndIntensity.w * attenuation;
+        directLighting += (diffuseWeight * albedo / PI + specular) *
+            radiance * nDotL * visibility;
+    }
 
     vec3 ambient = vec3(0.03) * albedo * ao;
     vec3 reflectDirView = reflect(-V, N);

@@ -11,6 +11,7 @@
 #include "Renderer/Resources/Material.h"
 #include "Renderer/Resources/Mesh.h"
 #include "Renderer/Pipeline/RenderSettings.h"
+#include "Renderer/View/RenderView.h"
 
 bool ShadowPass::Init(unsigned int width, unsigned int height)
 {
@@ -43,25 +44,34 @@ void ShadowPass::Execute(RenderPassContext& context)
     glEnable(GL_POLYGON_OFFSET_FILL);
     glPolygonOffset(2.0f, 4.0f);
 
-    if (!context.tessellation.enabled)
-    {
-        m_StandardShader.Bind();
-        m_StandardShader.SetMatrix4(
-            "lightMvp", &context.frame.lightMvp.cell[0]);
-        context.sceneMesh.Draw();
-    }
-    else
+    Shader& shader = context.tessellation.enabled
+        ? m_TessellationShader
+        : m_StandardShader;
+    shader.Bind();
+    if (context.tessellation.enabled)
     {
         glPatchParameteri(GL_PATCH_VERTICES, 3);
-        m_TessellationShader.Bind();
-        m_TessellationShader.SetMatrix4(
-            "lightMvp", &context.frame.lightMvp.cell[0]);
-        m_TessellationShader.SetFloat(
-            "tessellationLevel", context.tessellation.level);
-        m_TessellationShader.SetFloat(
+        shader.SetFloat("tessellationLevel", context.tessellation.level);
+        shader.SetFloat(
             "displacementScale", context.tessellation.displacementScale);
-        context.material.BindDisplacement(m_TessellationShader, 0);
-        context.sceneMesh.DrawPatches();
+    }
+
+    for (const RenderItem& item : context.shadowView.opaqueItems)
+    {
+        if (!item.castsShadow || item.mesh == nullptr || item.material == nullptr)
+            continue;
+
+        const cy::Matrix4f lightMvp = context.frame.lightVP * item.model;
+        shader.SetMatrix4("lightMvp", &lightMvp.cell[0]);
+        if (context.tessellation.enabled)
+        {
+            item.material->BindDisplacement(shader, 0);
+            item.mesh->DrawPatches();
+        }
+        else
+        {
+            item.mesh->Draw();
+        }
     }
 
     glDisable(GL_POLYGON_OFFSET_FILL);

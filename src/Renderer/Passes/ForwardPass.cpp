@@ -1,16 +1,34 @@
 // SPDX-License-Identifier: MIT
 #include "ForwardPass.h"
 
+#include <iostream>
+
 #include "Renderer/Resources/CubemapTexture.h"
 #include "Renderer/Resources/Material.h"
 #include "Renderer/Resources/Mesh.h"
 #include "Renderer/Pipeline/RenderSettings.h"
+#include "Renderer/Scene/LightSceneProxy.h"
+#include "Renderer/View/RenderView.h"
+
+ForwardPass::~ForwardPass()
+{
+    if (m_LightBuffer != 0)
+        glDeleteBuffers(1, &m_LightBuffer);
+}
 
 bool ForwardPass::Init(unsigned int width, unsigned int height)
 {
     const bool loaded = ReloadShaders();
+    glGenBuffers(1, &m_LightBuffer);
+    glBindBuffer(GL_UNIFORM_BUFFER, m_LightBuffer);
+    glBufferData(
+        GL_UNIFORM_BUFFER,
+        sizeof(GpuLightData) * MaxForwardLights,
+        nullptr,
+        GL_DYNAMIC_DRAW);
+    glBindBuffer(GL_UNIFORM_BUFFER, 0);
     m_Framebuffer.Init(width, height);
-    return loaded;
+    return loaded && m_LightBuffer != 0;
 }
 
 bool ForwardPass::ReloadShaders()
@@ -29,11 +47,57 @@ bool ForwardPass::ReloadShaders()
     const bool groundLoaded = m_GroundShader.Load(
         "assets/shaders/reflection/ground.vert",
         "assets/shaders/reflection/ground.frag");
-    const bool lightLoaded = m_LightShader.Load(
-        "assets/shaders/debug/light_object.vert",
-        "assets/shaders/debug/light_object.frag");
-    return standardLoaded && tessellationLoaded && skyboxLoaded &&
-        groundLoaded && lightLoaded;
+    const bool standardBlockBound = standardLoaded &&
+        BindForwardLightsBlock(m_StandardShader);
+    const bool tessellationBlockBound = tessellationLoaded &&
+        BindForwardLightsBlock(m_TessellationShader);
+    return standardBlockBound && tessellationBlockBound && skyboxLoaded &&
+        groundLoaded;
+}
+
+bool ForwardPass::BindForwardLightsBlock(const Shader& shader) const
+{
+    const GLuint blockIndex = glGetUniformBlockIndex(
+        shader.GetProgramID(), "ForwardLights");
+    if (blockIndex == GL_INVALID_INDEX)
+    {
+        std::cerr
+            << "[ForwardPass] ForwardLights uniform block was not found."
+            << std::endl;
+        return false;
+    }
+
+    glUniformBlockBinding(
+        shader.GetProgramID(), blockIndex, ForwardLightsBindingPoint);
+    return true;
+}
+
+LightUploadData ForwardPass::UploadLights(
+    const RenderView& view,
+    LightId shadowLightId)
+{
+    const LightUploadData upload = BuildLightUploadData(
+        view.lights, view.view, shadowLightId);
+
+    glBindBuffer(GL_UNIFORM_BUFFER, m_LightBuffer);
+    glBufferSubData(
+        GL_UNIFORM_BUFFER,
+        0,
+        sizeof(upload.lights),
+        upload.lights.data());
+    glBindBufferBase(
+        GL_UNIFORM_BUFFER, ForwardLightsBindingPoint, m_LightBuffer);
+    glBindBuffer(GL_UNIFORM_BUFFER, 0);
+
+    if (upload.truncated && !m_LightLimitWarningIssued)
+    {
+        std::cerr
+            << "[ForwardPass] Forward light count exceeds "
+            << MaxForwardLights << "; extra lights are ignored."
+            << std::endl;
+        m_LightLimitWarningIssued = true;
+    }
+    return upload;
 }
 
 void ForwardPass::Execute(RenderPassContext& context)
@@ -68,13 +132,7 @@ void ForwardPass::Execute(RenderPassContext& context)
         "shadowsEnabled", context.frame.shadowsEnabled ? 1 : 0);
     context.groundMesh.Draw();
 
-    RenderSurface(context, false);
-
-    m_LightShader.Bind();
-    m_LightShader.SetMatrix4(
-        "mvp", &context.frame.lightObjectMvp.cell[0]);
-    m_LightShader.SetVec3("lightColor", 1.0f, 0.85f, 0.15f);
-    context.lightMesh.Draw();
+    RenderSurface(context, context.mainView);
 
     m_Framebuffer.Unbind();
     m_Framebuffer.GenerateMipmaps();
@@ -82,32 +140,19 @@ void ForwardPass::Execute(RenderPassContext& context)
 
 void ForwardPass::RenderSurface(
     RenderPassContext& context,
-    bool reflectedView)
+    RenderView& renderView)
 {
-    const cy::Matrix4f& mvp = reflectedView
-        ? context.frame.reflectionMvp
-        : context.frame.mvp;
-    const cy::Matrix4f& mv = reflectedView
-        ? context.frame.reflectionMv
-        : context.frame.mv;
-    const cy::Matrix4f& view = reflectedView
-        ? context.frame.reflectionView
-        : context.frame.view;
-    const cy::Vec3f& lightPosition = reflectedView
-        ? context.frame.reflectionLightPositionView
-        : context.frame.lightPositionView;
+    const cy::Matrix4f& view = renderView.view;
+    const cy::Matrix4f& viewProjection = renderView.viewProjection;
 
     Shader& shader = context.tessellation.enabled
         ? m_TessellationShader
         : m_StandardShader;
     shader.Bind();
-    shader.SetMatrix4("mvp", &mvp.cell[0]);
-    shader.SetMatrix4("mv", &mv.cell[0]);
-    shader.SetMatrix4("lightMvp", &context.frame.lightMvp.cell[0]);
-    shader.SetVec3(
-        "lightPos", lightPosition.x, lightPosition.y, lightPosition.z);
-    shader.SetVec3("lightColor", 1.0f, 0.95f, 0.85f);
-    shader.SetFloat("lightIntensity", 5.0f);
+    const LightUploadData lightUpload = UploadLights(
+        renderView, context.frame.shadowLightId);
+    shader.SetInt("lightCount", static_cast<int>(lightUpload.lightCount));
+    shader.SetInt("shadowLightIndex", lightUpload.shadowLightIndex);
 
     const float viewToWorld[9] = {
         view.cell[0], view.cell[4], view.cell[8],
@@ -119,7 +164,6 @@ void ForwardPass::RenderSurface(
     if (viewToWorldLocation != -1)
         glUniformMatrix3fv(viewToWorldLocation, 1, GL_FALSE, viewToWorld);
 
-    context.material.Bind(shader, 0);
     if (context.tessellation.enabled)
     {
         shader.SetFloat("tessellationLevel", context.tessellation.level);
@@ -136,25 +180,40 @@ void ForwardPass::RenderSurface(
     shader.SetInt(
         "shadowsEnabled", context.frame.shadowsEnabled ? 1 : 0);
 
-    if (!context.tessellation.enabled)
+    for (const RenderItem& item : renderView.opaqueItems)
     {
-        context.sceneMesh.Draw();
-        return;
+        if (item.mesh == nullptr || item.material == nullptr)
+            continue;
+
+        const cy::Matrix4f mv = view * item.model;
+        const cy::Matrix4f mvp = viewProjection * item.model;
+        const cy::Matrix4f lightMvp = context.frame.lightVP * item.model;
+        shader.SetMatrix4("mvp", &mvp.cell[0]);
+        shader.SetMatrix4("mv", &mv.cell[0]);
+        shader.SetMatrix4("lightMvp", &lightMvp.cell[0]);
+        item.material->Bind(shader, 0);
+
+        if (!context.tessellation.enabled)
+        {
+            item.mesh->Draw();
+            continue;
+        }
+
+        glPatchParameteri(GL_PATCH_VERTICES, 3);
+        item.mesh->DrawPatches();
+        if (!context.tessellation.wireframe ||
+            renderView.type == RenderViewType::Reflection)
+            continue;
+
+        shader.SetInt("wireframePass", 1);
+        glEnable(GL_POLYGON_OFFSET_LINE);
+        glPolygonOffset(-1.0f, -1.0f);
+        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+        item.mesh->DrawPatches();
+        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        glDisable(GL_POLYGON_OFFSET_LINE);
+        shader.SetInt("wireframePass", 0);
     }
-
-    glPatchParameteri(GL_PATCH_VERTICES, 3);
-    context.sceneMesh.DrawPatches();
-    if (!context.tessellation.wireframe || reflectedView)
-        return;
-
-    shader.SetInt("wireframePass", 1);
-    glEnable(GL_POLYGON_OFFSET_LINE);
-    glPolygonOffset(-1.0f, -1.0f);
-    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-    context.sceneMesh.DrawPatches();
-    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-    glDisable(GL_POLYGON_OFFSET_LINE);
-    shader.SetInt("wireframePass", 0);
 }
 
 void ForwardPass::RenderSkybox(

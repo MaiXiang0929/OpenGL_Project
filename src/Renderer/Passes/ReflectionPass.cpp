@@ -21,7 +21,7 @@ void ReflectionPass::Execute(RenderPassContext& context)
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     m_ForwardPass.RenderSkybox(context, context.frame.reflectionView);
-    m_ForwardPass.RenderSurface(context, true);
+    m_ForwardPass.RenderSurface(context, context.reflectionView);
 
     m_Framebuffer.Unbind();
     m_Framebuffer.GenerateMipmaps();

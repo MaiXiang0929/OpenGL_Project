@@ -117,6 +117,8 @@ OpenGL_Project/
 │   │   ├── Core/            # Renderer 门面与资源所有权
 │   │   ├── Pipeline/        # Pipeline、Pass 契约与渲染设置
 │   │   ├── Passes/          # Shadow、Reflection、Forward、Present
+│   │   ├── Scene/           # RenderScene 与渲染侧 Scene Proxy
+│   │   ├── View/            # RenderView 与每视图绘制列表
 │   │   └── Resources/       # Mesh、Material、Shader、Texture 与 FBO
 │   └── main.cpp             # 程序入口
 ├── ThirdParty/              # 第三方依赖
@@ -131,6 +133,8 @@ OpenGL_Project/
 - `RenderPipeline`：拥有并按顺序执行 Shadow、Reflection、Forward、Present 渲染 Pass。
 - `RenderPass`：定义单个渲染阶段的执行契约，Pass 之间通过当前帧上下文传递工作。
 - `Renderer/Passes`：实现各个具体 GPU 渲染阶段。
+- `RenderScene`：保存与游戏逻辑解耦的 Primitive 和 Light 渲染代理。
+- `RenderView`：描述一次相机观察，并保存按材质类型分类的 `RenderItem` 列表。
 - `Renderer/Resources`：封装 Mesh、Material、Shader、Texture 和 Framebuffer 等 GPU 资源。
 - `Camera`：生成视图矩阵和透视/正交投影矩阵。
 - `Mesh`：管理 VAO、VBO 和网格绘制。
