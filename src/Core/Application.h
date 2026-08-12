@@ -7,12 +7,14 @@
 
 #pragma once
 
+#include <memory>
 #include <string>
 #include "cyVector.h"
 
 #include "Camera.h"
 
 struct GLFWwindow;
+class LightGizmo;
 class Renderer;
 
 /// @brief 应用程序核心管理类
@@ -38,6 +40,7 @@ private:
     GLFWwindow* m_Window        = nullptr;      ///< GLFW 窗口对象的指针句柄
 
     Renderer* m_Renderer        = nullptr;      ///< 渲染器对象的指针句柄
+    std::unique_ptr<LightGizmo> m_LightGizmo;   ///< Editor overlay，由 Application 管理生命周期
 
 	Camera m_Camera;                            ///< 离屏渲染物体所使用的摄像机
 	Camera m_PlaneCamera;                       ///< 最终显示纹理平面所使用的摄像机

@@ -11,7 +11,7 @@ int main(int argc, char** argv)
     std::string displacementPath = argc > 2 ? argv[2] : std::string();
     if (normalPath.empty()) {
         std::cout << "Usage: OpenGL_Project <normal.png> [displacement.png]\n"
-                  << "No arguments supplied; loading the bundled Project 8 maps." << std::endl;
+                  << "No arguments supplied; loading the bundled teapot material maps." << std::endl;
         if (std::filesystem::exists("assets/models/teapot_normal.png"))
             normalPath = "assets/models/teapot_normal.png";
         if (std::filesystem::exists("assets/models/teapot_disp.png"))

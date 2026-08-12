@@ -6,7 +6,8 @@
 /// @date 2026-07-31
 
 #include"Application.h"
-#include"Renderer.h"
+#include "Renderer/Core/Renderer.h"
+#include "Editor/LightGizmo.h"
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -145,7 +146,10 @@ bool Application::Init() {
     // 开启 OpenGL 默认状态
 	m_Renderer = new Renderer();
 	m_Renderer->Init();
-	m_Renderer->LoadTessellationTextures(m_NormalMapPath, m_DisplacementMapPath);
+    m_LightGizmo = std::make_unique<LightGizmo>();
+    m_LightGizmo->Init(
+        "assets/shaders/debug/billboard.vert",
+        "assets/shaders/debug/billboard.frag");
 
     // ==========================================
     // 第一阶段妥协：在 App 层临时加载网格和纹理
@@ -174,20 +178,78 @@ bool Application::Init() {
     vertices.reserve(static_cast<size_t>(mesh.NF()) * 3);
     bool hasTexCoords = mesh.HasTextureVertices();
     for (int i = 0; i < mesh.NF(); ++i) {
-        cy::TriMesh::TriFace face = mesh.F(i);
-        cy::TriMesh::TriFace faceNormal = mesh.FN(i);
-        cy::TriMesh::TriFace faceTex = hasTexCoords ? mesh.FT(i) : cy::TriMesh::TriFace();
+        const cy::TriMesh::TriFace face = mesh.F(i);
+        const cy::TriMesh::TriFace faceNormal = mesh.FN(i);
+        const cy::TriMesh::TriFace faceTex = hasTexCoords
+            ? mesh.FT(i)
+            : cy::TriMesh::TriFace();
+
+        cy::Vec3f positions[3];
+        cy::Vec3f normals[3];
+        cy::Vec2f uvs[3];
         for (int j = 0; j < 3; ++j) {
-            Vertex vertex{};
-            vertex.Position = mesh.V(face.v[j]);
-            vertex.Normal = mesh.VN(faceNormal.v[j]);
+            positions[j] = mesh.V(face.v[j]);
+            normals[j] = mesh.VN(faceNormal.v[j]);
             if (hasTexCoords) {
-                cy::Vec3f vt = mesh.VT(faceTex.v[j]);
-                vertex.TexCoord = cy::Vec2f(vt.x, 1.0f - vt.y);
+                const cy::Vec3f uv = mesh.VT(faceTex.v[j]);
+                uvs[j] = cy::Vec2f(uv.x, 1.0f - uv.y);
             }
             else {
-                vertex.TexCoord = cy::Vec2f(0.0f, 0.0f);
+                uvs[j] = cy::Vec2f(0.0f, 0.0f);
             }
+        }
+
+        const cy::Vec3f edge1 = positions[1] - positions[0];
+        const cy::Vec3f edge2 = positions[2] - positions[0];
+        const cy::Vec2f deltaUv1 = uvs[1] - uvs[0];
+        const cy::Vec2f deltaUv2 = uvs[2] - uvs[0];
+        const float determinant =
+            deltaUv1.x * deltaUv2.y - deltaUv1.y * deltaUv2.x;
+
+        cy::Vec3f faceTangent(1.0f, 0.0f, 0.0f);
+        cy::Vec3f faceBitangent(0.0f, 0.0f, 1.0f);
+        if (hasTexCoords && std::abs(determinant) > 1.0e-8f) {
+            const float inverseDeterminant = 1.0f / determinant;
+            faceTangent =
+                (edge1 * deltaUv2.y - edge2 * deltaUv1.y) * inverseDeterminant;
+            faceBitangent =
+                (edge2 * deltaUv1.x - edge1 * deltaUv2.x) * inverseDeterminant;
+        }
+
+        for (int j = 0; j < 3; ++j) {
+            cy::Vec3f normal = normals[j];
+            const float normalLength = normal.Length();
+            if (normalLength > 1.0e-8f)
+                normal /= normalLength;
+
+            const float tangentDotNormal =
+                faceTangent.x * normal.x +
+                faceTangent.y * normal.y +
+                faceTangent.z * normal.z;
+            cy::Vec3f tangent = faceTangent - normal * tangentDotNormal;
+            if (tangent.Length() <= 1.0e-8f) {
+                tangent = std::abs(normal.y) < 0.999f
+                    ? cy::Vec3f(normal.z, 0.0f, -normal.x)
+                    : cy::Vec3f(1.0f, 0.0f, 0.0f);
+            }
+            tangent.Normalize();
+
+            const cy::Vec3f crossNormalTangent(
+                normal.y * tangent.z - normal.z * tangent.y,
+                normal.z * tangent.x - normal.x * tangent.z,
+                normal.x * tangent.y - normal.y * tangent.x);
+            const float handednessDot =
+                crossNormalTangent.x * faceBitangent.x +
+                crossNormalTangent.y * faceBitangent.y +
+                crossNormalTangent.z * faceBitangent.z;
+
+            Vertex vertex{};
+            vertex.Position = positions[j];
+            vertex.Normal = normals[j];
+            vertex.TexCoord = uvs[j];
+            vertex.Tangent = cy::Vec4f(
+                tangent.x, tangent.y, tangent.z,
+                handednessDot < 0.0f ? -1.0f : 1.0f);
             vertices.push_back(vertex);
         }
     }
@@ -216,6 +278,7 @@ bool Application::Init() {
 
     std::filesystem::path diffusePath;
     std::filesystem::path specularPath;
+    Material mainMaterial;
     const std::filesystem::path modelDirectory =
         std::filesystem::path(m_ObjPath).parent_path();
 
@@ -223,6 +286,16 @@ bool Application::Init() {
     // 贴图路径以 OBJ 所在目录为基准进行解析。
     for (unsigned int i = 0; i < mesh.NM(); ++i) {
         const cy::TriMesh::Mtl& material = mesh.M(i);
+        if (i == 0) {
+            MaterialProperties& properties = mainMaterial.GetProperties();
+            properties.baseColor = cy::Vec3f(
+                material.Kd[0], material.Kd[1], material.Kd[2]);
+            properties.specularColor = cy::Vec3f(
+                material.Ks[0], material.Ks[1], material.Ks[2]);
+            properties.shininess = std::max(material.Ns, 1.0f);
+            properties.environmentReflectivity = std::max({
+                material.Ks[0], material.Ks[1], material.Ks[2] });
+        }
         if (diffusePath.empty() && material.map_Kd.data != nullptr) {
             diffusePath = modelDirectory / material.map_Kd.data;
         }
@@ -231,9 +304,23 @@ bool Application::Init() {
         }
     }
 
-    m_Renderer->LoadTextures(
-        diffusePath.empty() ? std::string() : diffusePath.lexically_normal().string(),
-        specularPath.empty() ? std::string() : specularPath.lexically_normal().string());
+    if (!diffusePath.empty()) {
+        mainMaterial.SetAlbedoMap(Texture2D::Load(
+            diffusePath.lexically_normal().string(), TextureColorSpace::SRGB));
+    }
+    if (!specularPath.empty()) {
+        mainMaterial.SetSpecularMap(Texture2D::Load(
+            specularPath.lexically_normal().string(), TextureColorSpace::Linear));
+    }
+    if (!m_NormalMapPath.empty()) {
+        mainMaterial.SetNormalMap(Texture2D::Load(
+            m_NormalMapPath, TextureColorSpace::Linear));
+    }
+    if (!m_DisplacementMapPath.empty()) {
+        mainMaterial.SetDisplacementMap(Texture2D::Load(
+            m_DisplacementMapPath, TextureColorSpace::Linear));
+    }
+    m_Renderer->SetMaterial(std::move(mainMaterial));
 
     glfwGetCursorPos(m_Window, &m_LastX, &m_LastY);
 
@@ -289,113 +376,72 @@ void Application::Render() {
     const cy::Matrix4f lightVP = lightProjection * lightView;
     const cy::Matrix4f lightMvp = lightVP * modelMatrix;
 
-    // --- 阴影深度 Pass：关闭阴影时跳过整个 pass，避免无意义的 GPU 绘制。---
-    RenderPassContext pipelineContext;
-    pipelineContext.shadowsEnabled = m_Renderer->IsShadowsEnabled();
-    pipelineContext.shadow = [&]() {
-        m_Renderer->BeginShadowPass();
-        m_Renderer->RenderShadowCaster(lightMvp);
-        m_Renderer->EndShadowPass();
-    };
-
-    // --- 反射 Pass：渲染到反射纹理 ---
-    cy::Matrix4f reflectMatrix =
+    // 反射视图仍由 Application 根据场景地面位置计算，Pass 只消费结果。
+    const cy::Matrix4f reflectMatrix =
         cy::Matrix4f::Translation(cy::Vec3f(0.0f, m_GroundY, 0.0f)) *
         cy::Matrix4f::Scale(1.0f, -1.0f, 1.0f) *
         cy::Matrix4f::Translation(cy::Vec3f(0.0f, -m_GroundY, 0.0f));
-    cy::Matrix4f reflectView = viewMatrix * reflectMatrix;
-
-    pipelineContext.reflection = [&]() {
-        m_Renderer->BeginReflectionPass();
-        m_Renderer->RenderSkybox(projMatrix, reflectView);
-        cy::Matrix4f rmvp = projMatrix * reflectView * modelMatrix;
-        cy::Matrix4f rmv = reflectView * modelMatrix;
-        cy::Vec4f rLight = reflectView * lightPosWorld;
-        m_Renderer->RenderScene(rmvp, rmv,
-            cy::Vec3f(rLight.x, rLight.y, rLight.z), reflectView, lightMvp);
-        m_Renderer->EndReflectionPass();
-    };
-
-    // --- 主物体 Pass：渲染到 FBO 颜色纹理 ---
-    pipelineContext.forward = [&]() {
-    m_Renderer->BeginObjectPass();
-
-    // 天空盒
-    m_Renderer->RenderSkybox(projMatrix, viewMatrix);
+    const cy::Matrix4f reflectView = viewMatrix * reflectMatrix;
 
     // 相机世界位置（用于地面着色器视线方向计算）
     const float dist = m_Camera.GetPosition().z;
-    cy::Vec3f cameraWorldPos(
+    const cy::Vec3f cameraWorldPos(
         viewMatrix.cell[2] * dist,
         viewMatrix.cell[6] * dist,
         viewMatrix.cell[10] * dist
     );
 
-    // 反射地面平面
-    {
-        const float groundSize = m_ModelDiameter * 2.0f;
-        cy::Matrix4f groundModel =
-            cy::Matrix4f::Translation(cy::Vec3f(
-                -m_ObjCenter.x, m_GroundY, -m_ObjCenter.z)) *
-            cy::Matrix4f::Scale(groundSize, 1.0f, groundSize);
-        cy::Matrix4f groundMvp = projMatrix * viewMatrix * groundModel;
-        cy::Matrix4f reflectionVP = projMatrix * reflectView;
-        m_Renderer->RenderGroundPlane(
-            groundMvp, groundModel, reflectionVP, cameraWorldPos, lightVP);
-    }
-
-    // 3D 物体（带环境反射的 Blinn-Phong）
-    cy::Matrix4f mv = viewMatrix * modelMatrix;
-    cy::Matrix4f mvp = projMatrix * viewMatrix * modelMatrix;
-    cy::Vec4f lightPosView = viewMatrix * lightPosWorld;
-    m_Renderer->RenderScene(mvp, mv,
-        cy::Vec3f(lightPosView.x, lightPosView.y, lightPosView.z), viewMatrix, lightMvp);
-
+    const float groundSize = m_ModelDiameter * 2.0f;
+    const cy::Matrix4f groundModel =
+        cy::Matrix4f::Translation(cy::Vec3f(
+            -m_ObjCenter.x, m_GroundY, -m_ObjCenter.z)) *
+        cy::Matrix4f::Scale(groundSize, 1.0f, groundSize);
     const cy::Matrix4f lightModel =
         cy::Matrix4f::Translation(lightWorldPosition) *
         cy::Matrix4f::Scale(0.75f, 0.75f, 0.75f);
-    m_Renderer->RenderLightObject(projMatrix * viewMatrix * lightModel);
 
-    // 光源调试图标
-    if (m_DrawDebugGizmos) {
-        m_Renderer->DrawLightGizmo(
-            projMatrix,
-            viewMatrix,
-            cy::Vec3f(lightPosWorld.x, lightPosWorld.y, lightPosWorld.z),
+    const cy::Matrix4f mv = viewMatrix * modelMatrix;
+    const cy::Matrix4f mvp = projMatrix * mv;
+    const cy::Vec4f lightPosView = viewMatrix * lightPosWorld;
+    const cy::Vec4f reflectionLight = reflectView * lightPosWorld;
+
+    // Application 只提交强类型帧数据，不再创建任何 Pass callback。
+    RenderFrameData frame;
+    frame.viewportWidth = m_Width;
+    frame.viewportHeight = m_Height;
+    frame.projection = projMatrix;
+    frame.view = viewMatrix;
+    frame.model = modelMatrix;
+    frame.mvp = mvp;
+    frame.mv = mv;
+    frame.lightVP = lightVP;
+    frame.lightMvp = lightMvp;
+    frame.lightWorldPosition = lightWorldPosition;
+    frame.lightPositionView = cy::Vec3f(
+        lightPosView.x, lightPosView.y, lightPosView.z);
+    frame.reflectionView = reflectView;
+    frame.reflectionMvp = projMatrix * reflectView * modelMatrix;
+    frame.reflectionMv = reflectView * modelMatrix;
+    frame.reflectionLightPositionView = cy::Vec3f(
+        reflectionLight.x, reflectionLight.y, reflectionLight.z);
+    frame.groundModel = groundModel;
+    frame.groundMvp = projMatrix * viewMatrix * groundModel;
+    frame.reflectionVP = projMatrix * reflectView;
+    frame.cameraWorldPosition = cameraWorldPos;
+    frame.lightObjectMvp = projMatrix * viewMatrix * lightModel;
+    frame.presentMvp =
+        m_PlaneCamera.GetProjectionMatrix() * m_PlaneCamera.GetViewMatrix();
+    m_Renderer->ExecutePipeline(frame);
+
+    // Editor overlay 在场景管线完成后绘制到窗口目标，不进入 Renderer Pass 依赖。
+    if (m_DrawDebugGizmos)
+    {
+        m_LightGizmo->Draw(
+            frame.projection,
+            frame.view,
+            frame.lightWorldPosition,
             1.0f);
     }
-
-    m_Renderer->EndObjectPass();
-    };
-
-    // --- 屏幕 Pass ---
-    pipelineContext.present = [&]() {
-    m_Renderer->BeginFrame(m_Width, m_Height);
-    const cy::Matrix4f planeMvp =
-        m_PlaneCamera.GetProjectionMatrix() * m_PlaneCamera.GetViewMatrix();
-    const cy::Vec3f tessLightPosition(2.5f, 2.5f, 3.0f);
-    const cy::Matrix4f tessLightView = cy::Matrix4f::View(
-        tessLightPosition, cy::Vec3f(0.0f, 0.0f, 0.0f), cy::Vec3f(0.0f, 1.0f, 0.0f));
-    const cy::Matrix4f tessLightProjection = cy::Matrix4f::Perspective(
-        70.0f * 3.14159265358979323846f / 180.0f, 1.0f, 0.1f, 10.0f);
-    m_Renderer->RenderTessellatedPlane(
-        planeMvp,
-        tessLightProjection * tessLightView,
-        tessLightPosition,
-        cy::Vec3f(0.0f, 0.0f, 3.5f));
-    if (m_DrawDebugGizmos) {
-        // Keep the light object visible in the Project 8 presentation view.
-        const cy::Matrix4f displayLight =
-            cy::Matrix4f::Translation(cy::Vec3f(0.78f, 0.78f, 0.55f)) *
-            cy::Matrix4f::Scale(0.12f, 0.12f, 0.12f);
-        glDisable(GL_DEPTH_TEST);
-        m_Renderer->RenderLightObject(planeMvp * displayLight);
-        glEnable(GL_DEPTH_TEST);
-    }
-    m_Renderer->EndFrame();
-    };
-
-    m_Renderer->ExecutePipeline(pipelineContext);
 }
 /// @brief 关闭应用程序
 void Application::Shutdown() {
@@ -407,6 +453,9 @@ void Application::Shutdown() {
 		delete m_Renderer;
 		m_Renderer = nullptr;
 	}
+
+    // LightGizmo 持有 OpenGL 对象，必须在 GLFW context 销毁前释放。
+    m_LightGizmo.reset();
     
 	// 释放 GLFW 窗口资源
     if (m_Window) {
@@ -513,10 +562,18 @@ void Application::KeyCallback(GLFWwindow* window, int key, int scancode, int act
             << (enabled ? "ON" : "OFF") << std::endl;
     }
 
+    if (key == GLFW_KEY_T && action == GLFW_PRESS) {
+        const bool enabled = !app->m_Renderer->IsTessellationEnabled();
+        app->m_Renderer->SetTessellationEnabled(enabled);
+        std::cout << "[Renderer] Teapot Tessellation: "
+            << (enabled ? "ON" : "OFF")
+            << std::endl;
+    }
+
     // 退出（ESC）
     if (action == GLFW_PRESS && key == GLFW_KEY_SPACE) {
-        const bool visible = !app->m_Renderer->IsTriangulationVisible();
-        app->m_Renderer->SetTriangulationVisible(visible);
+        const bool visible = !app->m_Renderer->IsTessellationWireframe();
+        app->m_Renderer->SetTessellationWireframe(visible);
         std::cout << "[Tessellation] Triangulation: " << (visible ? "ON" : "OFF") << std::endl;
     }
     if ((action == GLFW_PRESS || action == GLFW_REPEAT) && key == GLFW_KEY_LEFT) {

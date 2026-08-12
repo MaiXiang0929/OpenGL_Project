@@ -101,13 +101,23 @@ CMake 会在构建后自动将 `assets/` 复制到可执行文件目录。
 OpenGL_Project/
 ├── assets/
 │   ├── models/              # OBJ、MTL、PNG 和 Cubemap 资源
-│   └── shaders/             # GLSL 顶点与片元着色器
+│   └── shaders/
+│       ├── pbr/             # Cook-Torrance 与 Tessellation Shader
+│       ├── shadow/          # 阴影深度 Shader
+│       ├── environment/     # Skybox Shader
+│       ├── reflection/      # 平面反射地面 Shader
+│       ├── present/         # 最终显示 Shader
+│       └── debug/           # Gizmo 与调试 Shader
 ├── docs/
 │   └── assignments/         # 课程作业笔记
 ├── src/
 │   ├── Core/                # 应用生命周期、窗口输入和相机
 │   ├── Editor/              # 光源调试图标
-│   ├── Renderer/            # 渲染器及 GPU 资源封装
+│   ├── Renderer/
+│   │   ├── Core/            # Renderer 门面与资源所有权
+│   │   ├── Pipeline/        # Pipeline、Pass 契约与渲染设置
+│   │   ├── Passes/          # Shadow、Reflection、Forward、Present
+│   │   └── Resources/       # Mesh、Material、Shader、Texture 与 FBO
 │   └── main.cpp             # 程序入口
 ├── ThirdParty/              # 第三方依赖
 ├── CMakeLists.txt
@@ -117,9 +127,11 @@ OpenGL_Project/
 ## 核心模块
 
 - `Application`：管理 GLFW 窗口、输入、模型加载和每帧渲染流程。
-- `Renderer`：组织阴影、反射、场景和屏幕渲染阶段。
+- `Renderer/Core`：持有场景 GPU 资源并启动渲染管线。
 - `RenderPipeline`：拥有并按顺序执行 Shadow、Reflection、Forward、Present 渲染 Pass。
 - `RenderPass`：定义单个渲染阶段的执行契约，Pass 之间通过当前帧上下文传递工作。
+- `Renderer/Passes`：实现各个具体 GPU 渲染阶段。
+- `Renderer/Resources`：封装 Mesh、Material、Shader、Texture 和 Framebuffer 等 GPU 资源。
 - `Camera`：生成视图矩阵和透视/正交投影矩阵。
 - `Mesh`：管理 VAO、VBO 和网格绘制。
 - `Shader`：负责 GLSL 编译、链接和 Uniform 设置。

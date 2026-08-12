@@ -1,0 +1,40 @@
+// SPDX-License-Identifier: MIT
+/// @file RenderPipeline.h
+/// @brief 渲染管线类的头文件
+/// @details 该文件声明了 RenderPipeline 类，它直接拥有并按固定顺序执行四个真实渲染 Pass：ForwardPass、ShadowPass、ReflectionPass 和 PresentPass。
+/// @author MaiX
+/// @date 2026-08-11
+
+
+#pragma once
+
+#include <vector>
+
+#include "Renderer/Passes/ForwardPass.h"
+#include "Renderer/Passes/PresentPass.h"
+#include "Renderer/Passes/ReflectionPass.h"
+#include "RenderPass.h"
+#include "Renderer/Passes/ShadowPass.h"
+
+/// @brief 直接拥有并按固定顺序执行四个真实渲染 Pass。
+class RenderPipeline
+{
+public:
+    RenderPipeline();
+
+    bool Init();
+    bool ReloadShaders();
+    void Execute(RenderPassContext& context);
+
+    const std::vector<RenderPass*>& GetPasses() const
+    {
+        return m_Passes;
+    }
+
+private:
+    ForwardPass m_ForwardPass;
+    ShadowPass m_ShadowPass;
+    ReflectionPass m_ReflectionPass;
+    PresentPass m_PresentPass;
+    std::vector<RenderPass*> m_Passes;
+};

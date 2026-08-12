@@ -44,13 +44,26 @@ set(SOURCES
     src/Core/Application.cpp
     src/Core/Camera.cpp
 
-    # Renderer
-    src/Renderer/Renderer.cpp
-    src/Renderer/Shader.cpp
-    src/Renderer/Mesh.cpp
-    src/Renderer/Framebuffer.cpp
-    src/Renderer/ShadowMap.cpp
-    src/Renderer/RenderPipeline.cpp
+    # Renderer Core
+    src/Renderer/Core/Renderer.cpp
+
+    # Renderer Pipeline
+    src/Renderer/Pipeline/RenderPipeline.cpp
+
+    # Renderer Passes
+    src/Renderer/Passes/ForwardPass.cpp
+    src/Renderer/Passes/ShadowPass.cpp
+    src/Renderer/Passes/ReflectionPass.cpp
+    src/Renderer/Passes/PresentPass.cpp
+
+    # Renderer Resources
+    src/Renderer/Resources/Shader.cpp
+    src/Renderer/Resources/Mesh.cpp
+    src/Renderer/Resources/Texture2D.cpp
+    src/Renderer/Resources/Material.cpp
+    src/Renderer/Resources/CubemapTexture.cpp
+    src/Renderer/Resources/Framebuffer.cpp
+    src/Renderer/Resources/ShadowMap.cpp
 
     # Editor
     src/Editor/LightGizmo.cpp
@@ -83,9 +96,6 @@ target_include_directories(
 
     # Core
     ${SRC_DIR}/Core
-
-    # Renderer
-    ${SRC_DIR}/Renderer
 
     # Editor
     ${SRC_DIR}/Editor
@@ -136,6 +146,9 @@ target_link_options(${PROJECT_NAME} PRIVATE
 add_custom_command(
     TARGET ${PROJECT_NAME}
     POST_BUILD
+
+    COMMAND ${CMAKE_COMMAND} -E remove_directory
+    $<TARGET_FILE_DIR:${PROJECT_NAME}>/assets
 
     COMMAND ${CMAKE_COMMAND} -E copy_directory
 
