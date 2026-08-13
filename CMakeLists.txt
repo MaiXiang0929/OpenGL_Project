@@ -48,6 +48,11 @@ set(SOURCES
 
     # Renderer Core
     src/Renderer/Core/Renderer.cpp
+    src/Renderer/Core/OpenGLStateCache.cpp
+
+    # Renderer Diagnostics
+    src/Renderer/Diagnostics/GpuDebugScope.cpp
+    src/Renderer/Diagnostics/RenderSubmissionStats.cpp
 
     # Renderer Pipeline
     src/Renderer/Pipeline/RenderPipeline.cpp

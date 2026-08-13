@@ -11,6 +11,7 @@
 #include "Renderer/Resources/Material.h"
 #include "Renderer/Resources/Mesh.h"
 #include "Renderer/Pipeline/RenderSettings.h"
+#include "Renderer/Diagnostics/RenderSubmissionStats.h"
 #include "Renderer/View/RenderView.h"
 
 bool ShadowPass::Init(unsigned int width, unsigned int height)
@@ -65,6 +66,7 @@ void ShadowPass::Execute(RenderPassContext& context)
         shader.SetMatrix4("lightMvp", &lightMvp.cell[0]);
         if (context.tessellation.enabled)
         {
+            RenderSubmissionStats::Get().RecordMaterialBind(item.material);
             item.material->BindDisplacement(shader, 0);
             item.mesh->DrawPatches();
         }

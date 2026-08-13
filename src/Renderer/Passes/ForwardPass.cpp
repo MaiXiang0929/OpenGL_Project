@@ -4,6 +4,7 @@
 #include <iostream>
 
 #include "Renderer/Resources/CubemapTexture.h"
+#include "Renderer/Diagnostics/RenderSubmissionStats.h"
 #include "Renderer/Resources/Material.h"
 #include "Renderer/Resources/Mesh.h"
 #include "Renderer/Pipeline/RenderSettings.h"
@@ -123,9 +124,13 @@ void ForwardPass::Execute(RenderPassContext& context)
     context.cubemap.Bind(0);
     m_GroundShader.SetInt("cubemap", 0);
     glActiveTexture(GL_TEXTURE1);
+    RenderSubmissionStats::Get().RecordTextureBind(
+        GL_TEXTURE_2D, 1, context.reflectionTexture);
     glBindTexture(GL_TEXTURE_2D, context.reflectionTexture);
     m_GroundShader.SetInt("reflectionTex", 1);
     glActiveTexture(GL_TEXTURE2);
+    RenderSubmissionStats::Get().RecordTextureBind(
+        GL_TEXTURE_2D, 2, context.shadowTexture);
     glBindTexture(GL_TEXTURE_2D, context.shadowTexture);
     m_GroundShader.SetInt("shadowMap", 2);
     m_GroundShader.SetInt(
@@ -190,6 +195,8 @@ void ForwardPass::RenderItems(
     context.cubemap.Bind(4);
     shader.SetInt("cubemap", 4);
     glActiveTexture(GL_TEXTURE5);
+    RenderSubmissionStats::Get().RecordTextureBind(
+        GL_TEXTURE_2D, 5, context.shadowTexture);
     glBindTexture(GL_TEXTURE_2D, context.shadowTexture);
     shader.SetInt("shadowMap", 5);
     shader.SetInt(

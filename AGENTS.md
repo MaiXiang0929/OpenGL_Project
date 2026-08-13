@@ -111,6 +111,8 @@ CPU 负责场景代理、可见项列表、矩阵和资源绑定准备；GPU 负
 - [x] 独立 `TranslucencyPass` 已支持主视图透明物体从后向前稳定排序、Alpha Blend 和深度只读
 - [x] PBR 使用 std140 UBO 消费最多 16 盏 Directional/Point/Spot 灯光，并为单一 2D shadow map 记录对应灯光索引
 - [x] Renderer 已提供强类型 Mesh/Material Handle 与共享资源提交接口；透明测试场景的三张平面共享一份 Mesh
+- [x] RenderPipeline 已加入可选 GPU Debug Group，各 Pass 具备 Draw 与 Shader/Material/Mesh/Texture 提交统计
+- [x] 基于 `TranslucencyPass mesh=3/1` 基线实现最小 VAO 状态缓存，RenderDoc 捕获流程和数据记录于 `docs/renderdoc-baseline.md`
 - [x] CMake 构建时清理并复制最新 assets
 - [x] CMake 配置、编译、链接通过；本阶段未启动可执行文件
 
@@ -122,7 +124,7 @@ CPU 负责场景代理、可见项列表、矩阵和资源绑定准备；GPU 负
 
 ### 尚未开始
 
-- [ ] 共享 Mesh/Material 已完成，但 OpenGL 状态缓存和批处理尚未实现
+- [ ] 共享 Mesh/Material 与 VAO 状态缓存已完成，但 Shader/Texture 缓存、Instancing 和批处理尚未实现
 - [ ] HDR 合成、Bloom、Tone Mapping、SSAO
 - [ ] Cascaded Shadow Maps（CSM）
 - [ ] NPR Anime Shader：Toon、Face Shadow、Outline、Rim Light、Hair Highlight
@@ -195,8 +197,8 @@ CPU 负责场景代理、可见项列表、矩阵和资源绑定准备；GPU 负
 
 下一次实现前仍遵循“先给方案、确认后执行”的协作流程。建议优先顺序为：
 
-1. 使用 RenderDoc 建立共享资源后的状态切换基线，再决定是否增加跨 Draw 的 OpenGL 状态缓存或批处理。
-2. 将视图统计接入后续 ImGui/性能面板，并增加 GPU Pass 时间与真实状态切换基线。
+1. 将视图与提交统计接入后续 ImGui/性能面板，并增加 GPU Pass 时间基线。
+2. 扩充多实例场景后再次使用 RenderDoc 评估 Instancing；当前基线不支持盲目增加 Shader/Texture 缓存。
 3. 为透明材质补充纹理 Alpha、Blend Mode 与反射视图支持，并验证相交透明几何的已知限制。
 
 ## 7. 当前技术债与约束
@@ -206,7 +208,7 @@ CPU 负责场景代理、可见项列表、矩阵和资源绑定准备；GPU 负
 - RenderPass 之间仍通过共享 `RenderPassContext` 和 Pass 之间的直接引用传递视图及纹理资源，资源读写依赖尚未显式声明，后续可引入 Render Graph。
 - 当前裁剪只使用世界空间包围球，非均匀缩放取最大轴形成保守半径；细长物体可能产生误保留，但不会错误剔除。遮挡裁剪与距离裁剪尚未实现。
 - 主视图、反射视图和阴影视图每帧分别遍历场景并重建 `RenderItem` 列表；对象规模扩大后需要评估重复 CPU 遍历、容器填充和包围体变换成本。
-- 不透明列表已按稳定资源 ID 排序并支持共享 Mesh/Material，但各 Resource 类仍自行绑定/解绑 OpenGL 状态；实际状态切换收益需用 RenderDoc 验证后再优化。
+- 不透明列表已按稳定资源 ID 排序并支持共享 Mesh/Material；VAO 已由 Pass 内状态缓存管理，Shader 与 Texture 仍直接绑定，需在更大场景基线下再评估。
 - 透明排序使用物体包围球中心的观察空间深度，只覆盖主视图；相交网格、网格内部三角形顺序、纹理 Alpha 与透明反射仍未处理。
 - Forward 和 Reflection 颜色目标仍以固定分辨率初始化，窗口 resize 只更新窗口 viewport 与帧尺寸，没有重建对应的 Framebuffer 附件。
 - Forward PBR 最多消费 16 盏灯；当前仍只有一张 2D shadow map，Point Light 阴影与多阴影灯尚未实现。

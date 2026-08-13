@@ -5,6 +5,8 @@
 #include <vector>
 
 #include "Renderer/Passes/ForwardPass.h"
+#include "Renderer/Core/OpenGLStateCache.h"
+#include "Renderer/Diagnostics/RenderSubmissionStats.h"
 #include "Renderer/Scene/LightSceneProxy.h"
 #include "Renderer/View/RenderView.h"
 
@@ -166,9 +168,9 @@ void EditorPrimitivePass::DrawBillboard(
     m_BillboardShader.SetFloat(
         "viewportHeight", static_cast<float>(m_ForwardPass.GetTargetHeight()));
     m_BillboardShader.SetFloat("iconSizePixels", 28.0f);
-    glBindVertexArray(m_BillboardVao);
+    RenderSubmissionStats::Get().RecordMeshDraw(m_BillboardVao);
+    OpenGLStateCache::Get().BindVertexArray(m_BillboardVao);
     glDrawArrays(GL_TRIANGLES, 0, 6);
-    glBindVertexArray(0);
 }
 
 void EditorPrimitivePass::DrawSpotCone(
@@ -186,7 +188,7 @@ void EditorPrimitivePass::DrawSpotCone(
         "lineColor", light.color.x, light.color.y, light.color.z);
     m_LineShader.SetFloat("lightRange", light.range);
     m_LineShader.SetFloat("outerConeAngle", light.outerConeAngle);
-    glBindVertexArray(m_ConeVao);
+    RenderSubmissionStats::Get().RecordMeshDraw(m_ConeVao);
+    OpenGLStateCache::Get().BindVertexArray(m_ConeVao);
     glDrawArrays(GL_LINES, 0, m_ConeVertexCount);
-    glBindVertexArray(0);
 }

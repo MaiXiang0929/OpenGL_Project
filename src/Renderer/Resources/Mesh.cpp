@@ -12,6 +12,9 @@
 #include <limits>
 #include <stdexcept>
 
+#include "Renderer/Diagnostics/RenderSubmissionStats.h"
+#include "Renderer/Core/OpenGLStateCache.h"
+
 Mesh::Mesh()
 {
     CreateBuffers();
@@ -44,17 +47,17 @@ void Mesh::Draw() const
 {
     if (m_VertexCount == 0) return;
 
-    glBindVertexArray(m_VAO);
+    RenderSubmissionStats::Get().RecordMeshDraw(m_VAO);
+    OpenGLStateCache::Get().BindVertexArray(m_VAO);
     glDrawArrays(GL_TRIANGLES, 0, m_VertexCount);
-    glBindVertexArray(0);
 }
 
 void Mesh::DrawPatches() const
 {
     if (m_VertexCount == 0) return;
-    glBindVertexArray(m_VAO);
+    RenderSubmissionStats::Get().RecordMeshDraw(m_VAO);
+    OpenGLStateCache::Get().BindVertexArray(m_VAO);
     glDrawArrays(GL_PATCHES, 0, m_VertexCount);
-    glBindVertexArray(0);
 }
 
 int Mesh::GetVertexCount() const

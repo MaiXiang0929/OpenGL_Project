@@ -12,6 +12,8 @@
 #include <fstream>
 #include <sstream>
 
+#include "Renderer/Diagnostics/RenderSubmissionStats.h"
+
 Shader::Shader()
 {
 
@@ -148,6 +150,7 @@ bool Shader::LinkProgram(const std::vector<GLuint>& shaders)
 
 void Shader::Bind() const
 {
+	RenderSubmissionStats::Get().RecordShaderBind(m_ProgramID);
 	glUseProgram(m_ProgramID);
 }
 

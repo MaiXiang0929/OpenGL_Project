@@ -2,6 +2,7 @@
 #include "PresentPass.h"
 
 #include "ForwardPass.h"
+#include "Renderer/Diagnostics/RenderSubmissionStats.h"
 #include "Renderer/Resources/Mesh.h"
 
 bool PresentPass::Init()
@@ -30,6 +31,8 @@ void PresentPass::Execute(RenderPassContext& context)
     m_Shader.Bind();
     m_Shader.SetMatrix4("mvp", &context.frame.presentMvp.cell[0]);
     glActiveTexture(GL_TEXTURE0);
+    RenderSubmissionStats::Get().RecordTextureBind(
+        GL_TEXTURE_2D, 0, m_ForwardPass.GetColorTexture());
     glBindTexture(GL_TEXTURE_2D, m_ForwardPass.GetColorTexture());
     m_Shader.SetInt("renderedTexture", 0);
     context.presentMesh.Draw();

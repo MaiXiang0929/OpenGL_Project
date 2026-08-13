@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "lodepng.h"
+#include "Renderer/Diagnostics/RenderSubmissionStats.h"
 
 CubemapTexture::~CubemapTexture()
 {
@@ -72,6 +73,8 @@ bool CubemapTexture::Load(const std::string& directoryPath)
 
 void CubemapTexture::Bind(unsigned int textureUnit) const
 {
+    RenderSubmissionStats::Get().RecordTextureBind(
+        GL_TEXTURE_CUBE_MAP, textureUnit, m_TextureID);
     glActiveTexture(GL_TEXTURE0 + textureUnit);
     glBindTexture(GL_TEXTURE_CUBE_MAP, m_TextureID);
 }

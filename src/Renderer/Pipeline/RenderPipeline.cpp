@@ -8,6 +8,27 @@
 
 #include "RenderPipeline.h"
 
+#include "Renderer/Diagnostics/GpuDebugScope.h"
+#include "Renderer/Diagnostics/RenderSubmissionStats.h"
+#include "Renderer/Core/OpenGLStateCache.h"
+
+namespace
+{
+const char* GetPassDebugName(RenderPassType type)
+{
+    switch (type)
+    {
+    case RenderPassType::Shadow: return "MaiX.ShadowPass";
+    case RenderPassType::Reflection: return "MaiX.ReflectionPass";
+    case RenderPassType::Forward: return "MaiX.ForwardPass";
+    case RenderPassType::Translucency: return "MaiX.TranslucencyPass";
+    case RenderPassType::EditorPrimitive: return "MaiX.EditorPrimitivePass";
+    case RenderPassType::Present: return "MaiX.PresentPass";
+    }
+    return "MaiX.UnknownPass";
+}
+}
+
 RenderPipeline::RenderPipeline()
     : m_TranslucencyPass(m_ForwardPass)
     , m_EditorPrimitivePass(m_ForwardPass)
@@ -47,6 +68,16 @@ bool RenderPipeline::ReloadShaders()
 
 void RenderPipeline::Execute(RenderPassContext& context)
 {
+    RenderSubmissionStats& stats = RenderSubmissionStats::Get();
+    stats.BeginFrame();
     for (RenderPass* pass : m_Passes)
+    {
+        const RenderPassType type = pass->GetType();
+        OpenGLStateCache::Get().Invalidate();
+        stats.BeginPass(type);
+        const GpuDebugScope debugScope(GetPassDebugName(type));
         pass->Execute(context);
+        stats.EndPass();
+    }
+    stats.EndFrame();
 }

@@ -474,6 +474,9 @@ build/
 Build/
 build-*/
 
+# Local RenderDoc captures
+/captures/
+
 # CMake generated files
 CMakeFiles/
 CMakeCache.txt

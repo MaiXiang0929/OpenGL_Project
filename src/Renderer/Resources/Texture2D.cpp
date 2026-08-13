@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "lodepng.h"
+#include "Renderer/Diagnostics/RenderSubmissionStats.h"
 
 Texture2D::~Texture2D()
 {
@@ -67,6 +68,8 @@ std::shared_ptr<Texture2D> Texture2D::Load(
 
 void Texture2D::Bind(unsigned int textureUnit) const
 {
+    RenderSubmissionStats::Get().RecordTextureBind(
+        GL_TEXTURE_2D, textureUnit, m_TextureID);
     glActiveTexture(GL_TEXTURE0 + textureUnit);
     glBindTexture(GL_TEXTURE_2D, m_TextureID);
 }

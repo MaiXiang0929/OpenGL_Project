@@ -11,9 +11,11 @@
 #include <utility>
 
 #include "Shader.h"
+#include "Renderer/Diagnostics/RenderSubmissionStats.h"
 
 void Material::Bind(Shader& shader, unsigned int firstTextureUnit) const
 {
+    RenderSubmissionStats::Get().RecordMaterialBind(this);
     shader.SetVec3(
         "material.baseColor",
         m_Properties.baseColor.x,
