@@ -29,6 +29,7 @@ CPU 负责在完整帧边界固化场景、提交与 GPU Query 结果；GPU 负�
 - 六个 Pass 的 Draw 与 Shader/Mesh/Texture 请求和实际切换次数
 - 六个 Pass 的 GPU last/EMA 时间、总时间和 resolved/skipped 帧数
 - 阴影、编辑器图元、曲面细分、线框开关
+- ACES Tone Mapping 开关与手动曝光补偿（EV）
 - 曲面细分等级和位移强度
 
 ## 输入所有权

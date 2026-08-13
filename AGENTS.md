@@ -116,19 +116,20 @@ CPU 负责场景代理、可见项列表、矩阵和资源绑定准备；GPU 负
 - [x] 三帧缓冲的 GPU Timer Query 已输出各 Pass last/EMA 时间，并以非阻塞方式处理尚未完成的 Query
 - [x] ImGui `Renderer Statistics` 面板已显示场景、资源、CPU/GPU Pass 统计，并提供常用渲染调试参数
 - [x] Forward 与 Reflection 离屏目标已随窗口 framebuffer 动态重建；反射保持半分辨率，最小化时跳过零尺寸渲染
+- [x] Forward Scene Color 已升级为 RGBA16F，PresentPass 支持手动曝光、ACES Tone Mapping 与 sRGB 输出编码
 - [x] CMake 构建时清理并复制最新 assets
 - [x] CMake 配置、编译、链接通过；本阶段未启动可执行文件
 
 ### 部分完成
 
 - [ ] RenderPipeline 已具备 Pass 边界，但资源依赖仍主要通过共享 Frame Context 传递
-- [ ] Forward 使用离屏颜色目标，但 HDR、曝光和色调映射尚未独立实现
+- [ ] HDR Scene Color、曝光与色调映射已完成，但后处理仍由 PresentPass 执行，尚未拆分独立 PostProcess Pass
 - [ ] 视锥体裁剪已完成包围球粗裁剪，但遮挡裁剪、距离裁剪和更精确的包围体尚未实现
 
 ### 尚未开始
 
 - [ ] 共享 Mesh/Material 与 VAO 状态缓存已完成，但 Shader/Texture 缓存、Instancing 和批处理尚未实现
-- [ ] HDR 合成、Bloom、Tone Mapping、SSAO
+- [ ] HDR Scene Color、手动曝光与 Tone Mapping 已完成；Bloom、自动曝光与 SSAO 尚未实现
 - [ ] Cascaded Shadow Maps（CSM）
 - [ ] NPR Anime Shader：Toon、Face Shadow、Outline、Rim Light、Hair Highlight
 - [ ] ImGui 统计面板已完成；Scene Window、Inspector、Material Editor 尚未开始

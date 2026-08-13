@@ -232,7 +232,8 @@ void Renderer::ExecutePipeline(RenderFrameData& frame)
         m_SkyboxMesh,
         m_GroundMesh,
         m_Cubemap,
-        m_Tessellation
+        m_Tessellation,
+        m_PostProcess
     };
     m_RenderPipeline.Execute(context);
 }
@@ -285,4 +286,9 @@ void Renderer::SetTessellationLevel(float level)
 void Renderer::SetDisplacementScale(float scale)
 {
     m_Tessellation.displacementScale = std::max(scale, 0.0f);
+}
+
+void Renderer::SetExposureCompensation(float exposure)
+{
+    m_PostProcess.exposureCompensation = ClampExposureCompensation(exposure);
 }

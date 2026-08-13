@@ -34,7 +34,9 @@ bool ForwardPass::Init()
 bool ForwardPass::Resize(unsigned int width, unsigned int height)
 {
     return m_Framebuffer.Init(
-        static_cast<int>(width), static_cast<int>(height));
+        static_cast<int>(width),
+        static_cast<int>(height),
+        FramebufferColorFormat::RGBA16F);
 }
 
 bool ForwardPass::ReloadShaders()

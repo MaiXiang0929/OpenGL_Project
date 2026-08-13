@@ -34,18 +34,23 @@ Framebuffer::~Framebuffer() {
     Cleanup();
 }
 
-bool Framebuffer::Init(int width, int height) {
+bool Framebuffer::Init(
+    int width,
+    int height,
+    FramebufferColorFormat colorFormat) {
     if (width <= 0 || height <= 0) {
         std::cerr << "[Framebuffer] Rejected invalid extent "
                   << width << "x" << height << "." << std::endl;
         return false;
     }
-    if (m_Width == width && m_Height == height && m_FBO != 0) return true;
+    if (m_Width == width && m_Height == height &&
+        m_ColorFormat == colorFormat && m_FBO != 0) return true;
 
     Cleanup(); // 清理旧数据（防止 Resize 时内存泄漏）
 
     m_Width = width;
     m_Height = height;
+    m_ColorFormat = colorFormat;
 
     // 1. 创建 FBO
     glGenFramebuffers(1, &m_FBO);
@@ -54,7 +59,22 @@ bool Framebuffer::Init(int width, int height) {
     // 2. 创建 Color Texture Attachment
     glGenTextures(1, &m_ColorTexture);
     glBindTexture(GL_TEXTURE_2D, m_ColorTexture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, m_Width, m_Height, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+    const GLint internalFormat = colorFormat == FramebufferColorFormat::RGBA16F
+        ? GL_RGBA16F
+        : GL_RGBA8;
+    const GLenum dataType = colorFormat == FramebufferColorFormat::RGBA16F
+        ? GL_FLOAT
+        : GL_UNSIGNED_BYTE;
+    glTexImage2D(
+        GL_TEXTURE_2D,
+        0,
+        internalFormat,
+        m_Width,
+        m_Height,
+        0,
+        GL_RGBA,
+        dataType,
+        nullptr);
 
     // 先创建完整的 MipMap 链，保证使用 MipMap 过滤时纹理仍然完整。
     glGenerateMipmap(GL_TEXTURE_2D);
@@ -97,6 +117,7 @@ void Framebuffer::Cleanup() {
     if (m_FBO != 0) { glDeleteFramebuffers(1, &m_FBO); m_FBO = 0; }
     m_Width = 0;
     m_Height = 0;
+    m_ColorFormat = FramebufferColorFormat::RGBA8;
 }
 
 void Framebuffer::Bind() const {

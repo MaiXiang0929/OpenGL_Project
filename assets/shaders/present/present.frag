@@ -5,11 +5,36 @@ in vec2 fragTexCoord;
 layout(location = 0) out vec4 color;
 
 uniform sampler2D renderedTexture;
+uniform bool toneMappingEnabled;
+uniform float exposureCompensation;
+
+vec3 AcesFitted(vec3 colorValue)
+{
+    const float a = 2.51;
+    const float b = 0.03;
+    const float c = 2.43;
+    const float d = 0.59;
+    const float e = 0.14;
+    return clamp(
+        (colorValue * (a * colorValue + b)) /
+        (colorValue * (c * colorValue + d) + e),
+        0.0,
+        1.0);
+}
+
+vec3 LinearToSrgb(vec3 linearColor)
+{
+    vec3 low = linearColor * 12.92;
+    vec3 high = 1.055 * pow(max(linearColor, vec3(0.0)), vec3(1.0 / 2.4)) - 0.055;
+    return mix(high, low, lessThanEqual(linearColor, vec3(0.0031308)));
+}
 
 void main()
 {
-    vec3 renderedColor = texture(renderedTexture, fragTexCoord).rgb;
-
-    // 作业要求给平面颜色增加小常量，使纹理中的黑色区域仍能与黑色背景区分。
-    color = vec4(min(renderedColor + vec3(0.03), vec3(1.0)), 1.0);
+    vec3 sceneColor = max(texture(renderedTexture, fragTexCoord).rgb, vec3(0.0));
+    vec3 exposedColor = sceneColor * exp2(exposureCompensation);
+    vec3 displayLinear = toneMappingEnabled
+        ? AcesFitted(exposedColor)
+        : clamp(exposedColor, 0.0, 1.0);
+    color = vec4(LinearToSrgb(displayLinear), 1.0);
 }

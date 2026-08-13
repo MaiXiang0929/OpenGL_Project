@@ -16,7 +16,7 @@ constexpr std::array<const char*, 6> PassNames = {
 
 void RendererStatisticsPanel::Draw(Renderer& renderer)
 {
-    ImGui::SetNextWindowSize(ImVec2(700.0f, 620.0f), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(700.0f, 680.0f), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowPos(ImVec2(16.0f, 16.0f), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("Renderer Statistics"))
     {
@@ -91,6 +91,16 @@ void RendererStatisticsPanel::Draw(Renderer& renderer)
     if (ImGui::Checkbox("Shadows", &shadows)) renderer.SetShadowsEnabled(shadows);
     bool editor = renderer.AreEditorPrimitivesEnabled();
     if (ImGui::Checkbox("Editor primitives", &editor)) renderer.SetEditorPrimitivesEnabled(editor);
+    bool toneMapping = renderer.IsToneMappingEnabled();
+    if (ImGui::Checkbox("Tone mapping", &toneMapping)) renderer.SetToneMappingEnabled(toneMapping);
+    float exposure = renderer.GetExposureCompensation();
+    if (ImGui::SliderFloat(
+            "Exposure (EV)",
+            &exposure,
+            MinimumExposureCompensation,
+            MaximumExposureCompensation,
+            "%+.2f"))
+        renderer.SetExposureCompensation(exposure);
     bool tessellation = renderer.IsTessellationEnabled();
     if (ImGui::Checkbox("Tessellation", &tessellation)) renderer.SetTessellationEnabled(tessellation);
     bool wireframe = renderer.IsTessellationWireframe();

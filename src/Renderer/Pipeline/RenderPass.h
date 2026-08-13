@@ -11,6 +11,7 @@ class CubemapTexture;
 class Mesh;
 struct RenderView;
 struct TessellationSettings;
+struct PostProcessSettings;
 
 enum class RenderPassType
 {
@@ -61,6 +62,7 @@ struct RenderPassContext
     Mesh& groundMesh;
     CubemapTexture& cubemap;
     TessellationSettings& tessellation;
+    const PostProcessSettings& postProcess;
 
     // 前序 Pass 生成、后序 Pass 消费的 GPU 纹理句柄。
     GLuint shadowTexture = 0;

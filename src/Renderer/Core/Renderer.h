@@ -136,6 +136,20 @@ public:
         return m_Tessellation.wireframe;
     }
 
+    void SetToneMappingEnabled(bool enabled)
+    {
+        m_PostProcess.toneMappingEnabled = enabled;
+    }
+    bool IsToneMappingEnabled() const
+    {
+        return m_PostProcess.toneMappingEnabled;
+    }
+    void SetExposureCompensation(float exposure);
+    float GetExposureCompensation() const
+    {
+        return m_PostProcess.exposureCompensation;
+    }
+
 private:
     void LogMainViewStatsIfChanged(const RenderView& view);
 
@@ -150,6 +164,7 @@ private:
     CubemapTexture m_Cubemap;
     RenderPipeline m_RenderPipeline;
     TessellationSettings m_Tessellation;
+    PostProcessSettings m_PostProcess;
     StatisticsSnapshot m_StatisticsSnapshot;
     std::array<std::size_t, 9> m_LastMainViewStats{};
     bool m_HasMainViewStats = false;

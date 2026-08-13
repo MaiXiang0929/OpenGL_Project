@@ -258,4 +258,17 @@ if(BUILD_TESTING)
     )
 
     add_test(NAME RenderTargetSizingTests COMMAND RenderTargetSizingTests)
+
+    add_executable(
+        PostProcessSettingsTests
+        tests/Renderer/Pipeline/PostProcessSettingsTests.cpp
+    )
+
+    target_include_directories(
+        PostProcessSettingsTests
+        PRIVATE
+        ${SRC_DIR}
+    )
+
+    add_test(NAME PostProcessSettingsTests COMMAND PostProcessSettingsTests)
 endif()

@@ -49,7 +49,7 @@ bool CubemapTexture::Load(const std::string& directoryPath)
         glTexImage2D(
             GL_TEXTURE_CUBE_MAP_POSITIVE_X + face,
             0,
-            GL_RGBA8,
+            GL_SRGB8_ALPHA8,
             static_cast<GLsizei>(width),
             static_cast<GLsizei>(height),
             0,

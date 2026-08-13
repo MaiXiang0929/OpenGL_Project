@@ -3,6 +3,7 @@
 
 #include "ForwardPass.h"
 #include "Renderer/Diagnostics/RenderSubmissionStats.h"
+#include "Renderer/Pipeline/RenderSettings.h"
 #include "Renderer/Resources/Mesh.h"
 
 bool PresentPass::Init()
@@ -30,6 +31,12 @@ void PresentPass::Execute(RenderPassContext& context)
 
     m_Shader.Bind();
     m_Shader.SetMatrix4("mvp", &context.frame.presentMvp.cell[0]);
+    m_Shader.SetInt(
+        "toneMappingEnabled",
+        context.postProcess.toneMappingEnabled ? 1 : 0);
+    m_Shader.SetFloat(
+        "exposureCompensation",
+        context.postProcess.exposureCompensation);
     glActiveTexture(GL_TEXTURE0);
     RenderSubmissionStats::Get().RecordTextureBind(
         GL_TEXTURE_2D, 0, m_ForwardPass.GetColorTexture());

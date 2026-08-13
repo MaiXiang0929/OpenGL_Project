@@ -9,6 +9,12 @@
 
 #include <glad/glad.h>
 
+enum class FramebufferColorFormat
+{
+    RGBA8,
+    RGBA16F
+};
+
 class Framebuffer {
 public:
     Framebuffer() = default;
@@ -21,7 +27,10 @@ public:
     /// @brief 初始化或重新创建 Framebuffer
     /// @param width 缓冲区宽度
     /// @param height 缓冲区高度
-    bool Init(int width, int height);
+    bool Init(
+        int width,
+        int height,
+        FramebufferColorFormat colorFormat = FramebufferColorFormat::RGBA8);
 
     /// @brief 释放内部 OpenGL 资源
     void Cleanup();
@@ -40,6 +49,7 @@ public:
 
     int GetWidth() const { return m_Width; }
     int GetHeight() const { return m_Height; }
+    FramebufferColorFormat GetColorFormat() const { return m_ColorFormat; }
 
 private:
     GLuint m_FBO = 0;
@@ -48,4 +58,5 @@ private:
 
     int m_Width = 0;
     int m_Height = 0;
+    FramebufferColorFormat m_ColorFormat = FramebufferColorFormat::RGBA8;
 };

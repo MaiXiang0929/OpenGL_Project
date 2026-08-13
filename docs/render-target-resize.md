@@ -19,7 +19,8 @@ GLFW framebuffer callback (CPU)
     -> PresentPass restores the window viewport
 ```
 
-The Forward target matches the window framebuffer. The Reflection target uses
+The Forward target matches the window framebuffer and uses `RGBA16F` HDR scene
+color. The Reflection target uses `RGBA8` at
 half resolution in each dimension, rounded up for odd dimensions. This keeps
 the same aspect ratio while reducing reflection color/depth memory and pixel
 shader cost to approximately one quarter of the main target.
