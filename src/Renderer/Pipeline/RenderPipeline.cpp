@@ -8,6 +8,8 @@
 
 #include "RenderPipeline.h"
 
+#include <iostream>
+
 #include "Renderer/Diagnostics/GpuDebugScope.h"
 #include "Renderer/Diagnostics/RenderSubmissionStats.h"
 #include "Renderer/Core/OpenGLStateCache.h"
@@ -53,6 +55,14 @@ bool RenderPipeline::Init()
     const bool reflectionLoaded = m_ReflectionPass.Init(512, 512);
     const bool editorPrimitivesLoaded = m_EditorPrimitivePass.Init();
     const bool presentLoaded = m_PresentPass.Init();
+    const bool profilerInitialized = m_GpuProfiler.Init();
+    if (!profilerInitialized)
+    {
+        std::cerr
+            << "[RenderPipeline] GPU timing disabled because Timer Query "
+            << "initialization failed."
+            << std::endl;
+    }
     return forwardLoaded && shadowLoaded && reflectionLoaded &&
         editorPrimitivesLoaded && presentLoaded;
 }
@@ -70,14 +80,18 @@ void RenderPipeline::Execute(RenderPassContext& context)
 {
     RenderSubmissionStats& stats = RenderSubmissionStats::Get();
     stats.BeginFrame();
+    m_GpuProfiler.BeginFrame();
     for (RenderPass* pass : m_Passes)
     {
         const RenderPassType type = pass->GetType();
         OpenGLStateCache::Get().Invalidate();
         stats.BeginPass(type);
+        m_GpuProfiler.BeginPass(type);
         const GpuDebugScope debugScope(GetPassDebugName(type));
         pass->Execute(context);
+        m_GpuProfiler.EndPass();
         stats.EndPass();
     }
     stats.EndFrame();
+    m_GpuProfiler.EndFrame();
 }

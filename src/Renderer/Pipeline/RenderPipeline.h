@@ -17,6 +17,7 @@
 #include "RenderPass.h"
 #include "Renderer/Passes/ShadowPass.h"
 #include "Renderer/Passes/TranslucencyPass.h"
+#include "Renderer/Diagnostics/GpuPassProfiler.h"
 
 /// @brief 直接拥有并按固定顺序执行四个真实渲染 Pass。
 class RenderPipeline
@@ -32,6 +33,10 @@ public:
     {
         return m_Passes;
     }
+    const GpuTimingSnapshot& GetGpuTimingSnapshot() const
+    {
+        return m_GpuProfiler.GetSnapshot();
+    }
 
 private:
     ForwardPass m_ForwardPass;
@@ -40,5 +45,6 @@ private:
     ShadowPass m_ShadowPass;
     ReflectionPass m_ReflectionPass;
     PresentPass m_PresentPass;
+    GpuPassProfiler m_GpuProfiler;
     std::vector<RenderPass*> m_Passes;
 };

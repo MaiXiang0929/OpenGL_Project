@@ -113,6 +113,7 @@ CPU 负责场景代理、可见项列表、矩阵和资源绑定准备；GPU 负
 - [x] Renderer 已提供强类型 Mesh/Material Handle 与共享资源提交接口；透明测试场景的三张平面共享一份 Mesh
 - [x] RenderPipeline 已加入可选 GPU Debug Group，各 Pass 具备 Draw 与 Shader/Material/Mesh/Texture 提交统计
 - [x] 基于 `TranslucencyPass mesh=3/1` 基线实现最小 VAO 状态缓存，RenderDoc 捕获流程和数据记录于 `docs/renderdoc-baseline.md`
+- [x] 三帧缓冲的 GPU Timer Query 已输出各 Pass last/EMA 时间，并以非阻塞方式处理尚未完成的 Query
 - [x] CMake 构建时清理并复制最新 assets
 - [x] CMake 配置、编译、链接通过；本阶段未启动可执行文件
 
@@ -197,7 +198,7 @@ CPU 负责场景代理、可见项列表、矩阵和资源绑定准备；GPU 负
 
 下一次实现前仍遵循“先给方案、确认后执行”的协作流程。建议优先顺序为：
 
-1. 将视图与提交统计接入后续 ImGui/性能面板，并增加 GPU Pass 时间基线。
+1. 将视图、提交统计与 GPU Pass 时间快照接入后续 ImGui 性能面板。
 2. 扩充多实例场景后再次使用 RenderDoc 评估 Instancing；当前基线不支持盲目增加 Shader/Texture 缓存。
 3. 为透明材质补充纹理 Alpha、Blend Mode 与反射视图支持，并验证相交透明几何的已知限制。
 

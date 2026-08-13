@@ -57,3 +57,5 @@ Forward 与 Translucency 都复用同一个 PBR Shader，但它们是独立 Pass
 Recorder 只在 CPU 侧统计 Renderer 已接入的提交入口，不等同于 GPU 时间。它用于定位冗余 API 调用和验证排序效果；Pass GPU 时长、驱动内部开销和带宽瓶颈仍应以 RenderDoc Event Browser、Pipeline State 和 GPU Counter 为准。
 
 当前日志在首帧或统计变化时输出，不逐帧刷屏。未来若引入 ImGui 性能面板，可以直接消费同一份 `PassSubmissionStats`，但需要先将只读快照接口从 Recorder 中公开。
+
+各 Pass 的异步 GPU Timer Query、EMA 和只读快照已在后续阶段实现，生命周期与限制见 `docs/gpu-pass-profiling.md`。

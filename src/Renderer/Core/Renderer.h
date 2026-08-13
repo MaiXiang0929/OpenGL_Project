@@ -63,6 +63,10 @@ public:
 
     void ExecutePipeline(RenderFrameData& frame);
     void ReloadShaders();
+    const GpuTimingSnapshot& GetGpuTimingSnapshot() const
+    {
+        return m_RenderPipeline.GetGpuTimingSnapshot();
+    }
 
     std::size_t GetMeshResourceCount() const
     {

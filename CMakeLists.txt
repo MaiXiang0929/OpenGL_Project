@@ -52,6 +52,7 @@ set(SOURCES
 
     # Renderer Diagnostics
     src/Renderer/Diagnostics/GpuDebugScope.cpp
+    src/Renderer/Diagnostics/GpuPassProfiler.cpp
     src/Renderer/Diagnostics/RenderSubmissionStats.cpp
 
     # Renderer Pipeline
