@@ -17,6 +17,7 @@ enum class RenderPassType
     Shadow,
     Reflection,
     Forward,
+    Translucency,
     EditorPrimitive,
     Present
 };

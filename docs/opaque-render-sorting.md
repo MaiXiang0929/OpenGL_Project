@@ -30,7 +30,7 @@ Shader -> Mesh -> Material -> Primitive
 
 标准阴影路径不绑定表面材质纹理。Material 仍保留在排序键中，因为曲面细分阴影路径需要使用位移纹理。
 
-透明物体不会参与该排序。后续需要在 `TranslucencyPass` 中根据视图空间深度执行从后向前排序。
+透明物体不参与不透明资源排序。它们由 `BuildRenderView()` 根据包围球中心的观察空间 Z 值稳定地从后向前排序，并交给独立 `TranslucencyPass` 绘制；详细状态约束见 `docs/translucency-pass.md`。
 
 ## 运行时统计
 

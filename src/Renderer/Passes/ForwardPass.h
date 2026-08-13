@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <vector>
+
 #include "Renderer/Resources/Framebuffer.h"
 #include "Renderer/Pipeline/RenderPass.h"
 #include "Renderer/Resources/Shader.h"
 #include "Renderer/View/LightRenderData.h"
+
+struct RenderItem;
 
 /// @brief 主颜色 Pass，负责场景正向渲染和主 HDR/颜色目标。
 class ForwardPass final : public RenderPass
@@ -20,6 +24,9 @@ public:
 
     /// ReflectionPass 复用同一套材质 Shader，确保反射与主画面一致。
     void RenderSurface(RenderPassContext& context, RenderView& view);
+    void RenderTranslucentSurface(
+        RenderPassContext& context,
+        RenderView& view);
     void RenderSkybox(
         RenderPassContext& context,
         const cy::Matrix4f& view);
@@ -41,6 +48,11 @@ private:
     LightUploadData UploadLights(
         const RenderView& view,
         LightId shadowLightId);
+    void RenderItems(
+        RenderPassContext& context,
+        RenderView& renderView,
+        const std::vector<RenderItem>& items,
+        bool allowWireframeOverlay);
 
     Shader m_StandardShader;
     Shader m_TessellationShader;

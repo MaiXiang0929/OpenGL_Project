@@ -9,7 +9,8 @@
 #include "RenderPipeline.h"
 
 RenderPipeline::RenderPipeline()
-    : m_EditorPrimitivePass(m_ForwardPass)
+    : m_TranslucencyPass(m_ForwardPass)
+    , m_EditorPrimitivePass(m_ForwardPass)
     , m_ReflectionPass(m_ForwardPass)
     , m_PresentPass(m_ForwardPass)
 {
@@ -18,6 +19,7 @@ RenderPipeline::RenderPipeline()
         &m_ShadowPass,
         &m_ReflectionPass,
         &m_ForwardPass,
+        &m_TranslucencyPass,
         &m_EditorPrimitivePass,
         &m_PresentPass
     };

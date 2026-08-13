@@ -129,6 +129,36 @@ void TestShadowViewSorting()
 
     RequireOrder(view.opaqueItems, 3, 1, 2, 0);
 }
+
+void TestTranslucentBackToFrontStableSorting()
+{
+    RenderScene scene;
+    const PrimitiveId nearId = scene.AddPrimitive(MakePrimitive(
+        0, 0, 0, cy::Vec3f(0.0f, 0.0f, -2.0f), true));
+    const PrimitiveId farFirstId = scene.AddPrimitive(MakePrimitive(
+        0, 0, 0, cy::Vec3f(0.0f, 0.0f, -8.0f), true));
+    const PrimitiveId farSecondId = scene.AddPrimitive(MakePrimitive(
+        0, 0, 0, cy::Vec3f(1.0f, 0.0f, -8.0f), true));
+
+    RenderView view;
+    view.type = RenderViewType::Main;
+    view.frustumCullingEnabled = false;
+    scene.BuildRenderView(view);
+
+    Require(view.opaqueItems.empty(),
+        "A translucent-only scene must not produce opaque items.");
+    Require(view.translucentItems.size() == 3,
+        "Expected three translucent render items.");
+    Require(
+        view.translucentItems[0].primitiveId == farFirstId &&
+        view.translucentItems[1].primitiveId == farSecondId &&
+        view.translucentItems[2].primitiveId == nearId,
+        "Translucent items must sort back-to-front and remain stable at equal depth.");
+    Require(
+        view.translucentItems[0].sortDepth == -8.0f &&
+        view.translucentItems[2].sortDepth == -2.0f,
+        "Translucent sort depth should use the world bounds center in view space.");
+}
 }
 
 int main()
@@ -136,6 +166,7 @@ int main()
     TestSurfaceViewSortingAndStats();
     TestReflectionUsesSurfaceSortPolicy();
     TestShadowViewSorting();
+    TestTranslucentBackToFrontStableSorting();
     std::cout << "RenderScene tests passed." << std::endl;
     return EXIT_SUCCESS;
 }

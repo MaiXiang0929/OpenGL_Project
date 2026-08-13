@@ -18,6 +18,7 @@ struct MaterialData
     float metallic;
     float roughness;
     float ambientOcclusion;
+    float opacity;
 
     sampler2D albedoMap;
     sampler2D specularMap;
@@ -230,5 +231,7 @@ void main()
     vec3 environmentSpecular = envReflection * environmentFresnel *
         material.environmentReflectivity * (1.0 - roughness * 0.75);
 
-    color = vec4(ambient + directLighting + environmentSpecular, 1.0);
+    color = vec4(
+        ambient + directLighting + environmentSpecular,
+        clamp(material.opacity, 0.0, 1.0));
 }

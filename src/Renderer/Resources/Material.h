@@ -27,6 +27,8 @@ struct MaterialProperties
     float metallic = 0.0f;
     float roughness = 0.5f;
     float ambientOcclusion = 1.0f;
+    // 透明 Pass 使用的整体不透明度；管线分类仍由 Primitive 单独决定。
+    float opacity = 1.0f;
 };
 
 class Material

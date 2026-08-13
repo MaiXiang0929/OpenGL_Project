@@ -31,6 +31,7 @@ void Material::Bind(Shader& shader, unsigned int firstTextureUnit) const
     shader.SetFloat("material.metallic", m_Properties.metallic);
     shader.SetFloat("material.roughness", m_Properties.roughness);
     shader.SetFloat("material.ambientOcclusion", m_Properties.ambientOcclusion);
+    shader.SetFloat("material.opacity", m_Properties.opacity);
 
     const unsigned int albedoUnit = firstTextureUnit;
     const unsigned int specularUnit = firstTextureUnit + 1;

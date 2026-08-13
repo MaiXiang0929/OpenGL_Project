@@ -49,6 +49,22 @@ void SortOpaqueItems(RenderView& view)
         });
 }
 
+void SortTranslucentItems(RenderView& view)
+{
+    if (view.type == RenderViewType::Shadow)
+        return;
+
+    // OpenGL 观察空间中相机朝向 -Z，数值更小的物体离相机更远。
+    // 稳定排序会保留同深度物体的场景提交顺序，避免逐帧顺序抖动。
+    std::stable_sort(
+        view.translucentItems.begin(),
+        view.translucentItems.end(),
+        [](const RenderItem& left, const RenderItem& right)
+        {
+            return left.sortDepth < right.sortDepth;
+        });
+}
+
 void UpdateOpaqueStats(RenderView& view)
 {
     view.opaqueDrawCount = view.opaqueItems.size();
@@ -180,16 +196,26 @@ void RenderScene::BuildRenderView(RenderView& view) const
             proxy.materialId,
             proxy.meshId,
             proxy.localToWorld,
+            0.0f,
             proxy.castsShadow
         };
         if (proxy.translucent)
+        {
+            const cy::Vec4f centerView = view.view * cy::Vec4f(
+                worldBounds.center.x,
+                worldBounds.center.y,
+                worldBounds.center.z,
+                1.0f);
+            item.sortDepth = centerView.z;
             view.translucentItems.push_back(item);
+        }
         else
             view.opaqueItems.push_back(item);
         ++view.visiblePrimitiveCount;
     }
 
     SortOpaqueItems(view);
+    SortTranslucentItems(view);
     UpdateOpaqueStats(view);
 
     view.lights.reserve(m_Lights.size());

@@ -92,7 +92,7 @@ CPU 负责场景代理、可见项列表、矩阵和资源绑定准备；GPU 负
 
 - [x] Renderer 目录按 Core / Pipeline / Passes / Resources / Scene / View 拆分
 - [x] Shader 目录按渲染用途拆分
-- [x] `RenderPipeline` 按固定顺序执行 Shadow、Reflection、Forward、EditorPrimitive、Present
+- [x] `RenderPipeline` 按固定顺序执行 Shadow、Reflection、Forward、Translucency、EditorPrimitive、Present
 - [x] `RenderScene`、`PrimitiveSceneProxy`、`LightSceneProxy` 已建立
 - [x] `RenderView`、`RenderItem` 已建立，支持 opaque/translucent 分类
 - [x] Renderer 持有 Primitive 的 Mesh 与 Material，Scene Proxy 使用非 owning 指针
@@ -108,13 +108,13 @@ CPU 负责场景代理、可见项列表、矩阵和资源绑定准备；GPU 负
 - [x] Directional/Spot 阴影基础流程与 PCF
 - [x] Cubemap、反射地面、离屏 Framebuffer、Present 流程
 - [x] Light Gizmo 已迁移为独立 `EditorPrimitivePass`，在 Present 前写入 Forward 颜色目标
+- [x] 独立 `TranslucencyPass` 已支持主视图透明物体从后向前稳定排序、Alpha Blend 和深度只读
+- [x] PBR 使用 std140 UBO 消费最多 16 盏 Directional/Point/Spot 灯光，并为单一 2D shadow map 记录对应灯光索引
 - [x] CMake 构建时清理并复制最新 assets
 - [x] CMake 配置、编译、链接通过；本阶段未启动可执行文件
 
 ### 部分完成
 
-- [ ] RenderView 已分类透明物体，但尚无独立 `TranslucencyPass`
-- [ ] 场景支持多灯光代理，但当前 PBR Shader 只消费第一盏灯
 - [ ] RenderPipeline 已具备 Pass 边界，但资源依赖仍主要通过共享 Frame Context 传递
 - [ ] Forward 使用离屏颜色目标，但 HDR、曝光和色调映射尚未独立实现
 - [ ] 视锥体裁剪已完成包围球粗裁剪，但遮挡裁剪、距离裁剪和更精确的包围体尚未实现
@@ -122,7 +122,6 @@ CPU 负责场景代理、可见项列表、矩阵和资源绑定准备；GPU 负
 ### 尚未开始
 
 - [ ] 不透明排序已完成，但共享 Mesh/Material、状态缓存和批处理尚未实现
-- [ ] 真正的 TranslucencyPass 与透明排序
 - [ ] HDR 合成、Bloom、Tone Mapping、SSAO
 - [ ] Cascaded Shadow Maps（CSM）
 - [ ] NPR Anime Shader：Toon、Face Shadow、Outline、Rim Light、Hair Highlight
@@ -195,10 +194,9 @@ CPU 负责场景代理、可见项列表、矩阵和资源绑定准备；GPU 负
 
 下一次实现前仍遵循“先给方案、确认后执行”的协作流程。建议优先顺序为：
 
-1. 将当前只消费第一盏灯的 PBR 接口演进为可扩展的多灯光 GPU 数据提交，并定义灯光数量上限与缓冲布局。
-2. 实现独立 `TranslucencyPass`，补齐从后向前排序、混合状态和深度写入策略。
-3. 让多个 Primitive 可共享 Mesh/Material 资源，并基于 RenderDoc 结果决定是否增加跨 Draw 的 OpenGL 状态缓存或批处理。
-4. 将视图统计接入后续 ImGui/性能面板，并增加 GPU Pass 时间与真实状态切换基线。
+1. 让多个 Primitive 可共享 Mesh/Material 资源，并基于 RenderDoc 结果决定是否增加跨 Draw 的 OpenGL 状态缓存或批处理。
+2. 将视图统计接入后续 ImGui/性能面板，并增加 GPU Pass 时间与真实状态切换基线。
+3. 为透明材质补充纹理 Alpha、Blend Mode 与反射视图支持，并验证相交透明几何的已知限制。
 
 ## 7. 当前技术债与约束
 
@@ -208,9 +206,9 @@ CPU 负责场景代理、可见项列表、矩阵和资源绑定准备；GPU 负
 - 当前裁剪只使用世界空间包围球，非均匀缩放取最大轴形成保守半径；细长物体可能产生误保留，但不会错误剔除。遮挡裁剪与距离裁剪尚未实现。
 - 主视图、反射视图和阴影视图每帧分别遍历场景并重建 `RenderItem` 列表；对象规模扩大后需要评估重复 CPU 遍历、容器填充和包围体变换成本。
 - 不透明列表已按稳定资源 ID 排序，但 `AddPrimitive` 当前仍为每个 Primitive 创建独立 Mesh/Material，且各 Resource 类仍自行绑定/解绑 OpenGL 状态；排序已建立确定的提交顺序，实际状态切换收益需在资源共享和 RenderDoc 验证后实现。
-- `RenderView` 已生成透明列表，但现有 Pass 不消费 `translucentItems`，透明物体当前不会进入正确的混合渲染路径。
+- 透明排序使用物体包围球中心的观察空间深度，只覆盖主视图；相交网格、网格内部三角形顺序、纹理 Alpha 与透明反射仍未处理。
 - Forward 和 Reflection 颜色目标仍以固定分辨率初始化，窗口 resize 只更新窗口 viewport 与帧尺寸，没有重建对应的 Framebuffer 附件。
-- 场景可保存多灯光代理，EditorPrimitivePass 也能遍历显示多灯光，但当前 PBR 光照与阴影路径仍只消费第一盏灯。
+- Forward PBR 最多消费 16 盏灯；当前仍只有一张 2D shadow map，Point Light 阴影与多阴影灯尚未实现。
 - 透明、HDR、后处理和多灯光会显著扩大 GPU 资源与调试范围，应逐步加入 RenderDoc 基线。
 - 当前只完成编译、链接和 `FrustumTests` 自动验证，尚未启动图形程序；Visual Studio 2026 调试时应重点确认 PBR、阴影、反射、曲面细分、EditorPrimitive 灯光可视化及快捷键没有回归。
 

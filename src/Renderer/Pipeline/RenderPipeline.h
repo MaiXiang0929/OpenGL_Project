@@ -16,6 +16,7 @@
 #include "Renderer/Passes/ReflectionPass.h"
 #include "RenderPass.h"
 #include "Renderer/Passes/ShadowPass.h"
+#include "Renderer/Passes/TranslucencyPass.h"
 
 /// @brief 直接拥有并按固定顺序执行四个真实渲染 Pass。
 class RenderPipeline
@@ -34,6 +35,7 @@ public:
 
 private:
     ForwardPass m_ForwardPass;
+    TranslucencyPass m_TranslucencyPass;
     EditorPrimitivePass m_EditorPrimitivePass;
     ShadowPass m_ShadowPass;
     ReflectionPass m_ReflectionPass;

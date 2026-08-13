@@ -16,5 +16,6 @@ struct RenderItem
     RenderResourceId materialId = InvalidRenderResourceId;
     RenderResourceId meshId = InvalidRenderResourceId;
     cy::Matrix4f model = cy::Matrix4f::Identity();
+    float sortDepth = 0.0f;
     bool castsShadow = true;
 };

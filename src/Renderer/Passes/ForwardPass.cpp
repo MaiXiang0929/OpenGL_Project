@@ -135,12 +135,27 @@ void ForwardPass::Execute(RenderPassContext& context)
     RenderSurface(context, context.mainView);
 
     m_Framebuffer.Unbind();
-    m_Framebuffer.GenerateMipmaps();
 }
 
 void ForwardPass::RenderSurface(
     RenderPassContext& context,
     RenderView& renderView)
+{
+    RenderItems(context, renderView, renderView.opaqueItems, true);
+}
+
+void ForwardPass::RenderTranslucentSurface(
+    RenderPassContext& context,
+    RenderView& renderView)
+{
+    RenderItems(context, renderView, renderView.translucentItems, false);
+}
+
+void ForwardPass::RenderItems(
+    RenderPassContext& context,
+    RenderView& renderView,
+    const std::vector<RenderItem>& items,
+    bool allowWireframeOverlay)
 {
     const cy::Matrix4f& view = renderView.view;
     const cy::Matrix4f& viewProjection = renderView.viewProjection;
@@ -180,7 +195,7 @@ void ForwardPass::RenderSurface(
     shader.SetInt(
         "shadowsEnabled", context.frame.shadowsEnabled ? 1 : 0);
 
-    for (const RenderItem& item : renderView.opaqueItems)
+    for (const RenderItem& item : items)
     {
         if (item.mesh == nullptr || item.material == nullptr)
             continue;
@@ -201,7 +216,7 @@ void ForwardPass::RenderSurface(
 
         glPatchParameteri(GL_PATCH_VERTICES, 3);
         item.mesh->DrawPatches();
-        if (!context.tessellation.wireframe ||
+        if (!allowWireframeOverlay || !context.tessellation.wireframe ||
             renderView.type == RenderViewType::Reflection)
             continue;
 
