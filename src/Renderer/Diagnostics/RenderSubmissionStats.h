@@ -24,6 +24,13 @@ struct PassSubmissionStats
     bool operator==(const PassSubmissionStats& other) const;
 };
 
+struct RenderSubmissionSnapshot
+{
+    static constexpr std::size_t PassCount = 6;
+    std::array<PassSubmissionStats, PassCount> passes{};
+    bool valid = false;
+};
+
 /// @brief 记录 CPU 向 OpenGL 提交的绑定请求，并统计相邻请求中的真实状态变化。
 class RenderSubmissionStats
 {
@@ -41,8 +48,11 @@ public:
     void RecordTextureBind(GLenum target, unsigned int unit, GLuint texture);
     void RecordDrawCall();
 
+    /// @brief 返回最近一个完整帧的 CPU 提交统计，只读面板不参与统计生命周期。
+    RenderSubmissionSnapshot GetSnapshot() const;
+
 private:
-    static constexpr std::size_t PassCount = 6;
+    static constexpr std::size_t PassCount = RenderSubmissionSnapshot::PassCount;
     static constexpr std::size_t TextureUnitCount = 16;
     static constexpr std::size_t TextureTargetCount = 2;
 

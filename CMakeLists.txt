@@ -46,6 +46,9 @@ set(SOURCES
     src/Core/Application.cpp
     src/Core/Camera.cpp
 
+    # Editor
+    src/Editor/RendererStatisticsPanel.cpp
+
     # Renderer Core
     src/Renderer/Core/Renderer.cpp
     src/Renderer/Core/OpenGLStateCache.cpp
@@ -88,6 +91,14 @@ set(SOURCES
 
     # LodePNG
     ThirdParty/lodepng/lodepng.cpp
+
+    # Dear ImGui core and GLFW/OpenGL backend
+    ThirdParty/imgui/imgui.cpp
+    ThirdParty/imgui/imgui_draw.cpp
+    ThirdParty/imgui/imgui_tables.cpp
+    ThirdParty/imgui/imgui_widgets.cpp
+    ThirdParty/imgui/backends/imgui_impl_glfw.cpp
+    ThirdParty/imgui/backends/imgui_impl_opengl3.cpp
 )
 
 # ============================
@@ -126,6 +137,9 @@ target_include_directories(
 
     # LodePNG
     ${THIRD_PARTY_DIR}/lodepng
+
+    # Dear ImGui
+    ${THIRD_PARTY_DIR}/imgui
 )
 
 # ============================

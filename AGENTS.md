@@ -114,6 +114,7 @@ CPU 负责场景代理、可见项列表、矩阵和资源绑定准备；GPU 负
 - [x] RenderPipeline 已加入可选 GPU Debug Group，各 Pass 具备 Draw 与 Shader/Material/Mesh/Texture 提交统计
 - [x] 基于 `TranslucencyPass mesh=3/1` 基线实现最小 VAO 状态缓存，RenderDoc 捕获流程和数据记录于 `docs/renderdoc-baseline.md`
 - [x] 三帧缓冲的 GPU Timer Query 已输出各 Pass last/EMA 时间，并以非阻塞方式处理尚未完成的 Query
+- [x] ImGui `Renderer Statistics` 面板已显示场景、资源、CPU/GPU Pass 统计，并提供常用渲染调试参数
 - [x] CMake 构建时清理并复制最新 assets
 - [x] CMake 配置、编译、链接通过；本阶段未启动可执行文件
 
@@ -129,7 +130,7 @@ CPU 负责场景代理、可见项列表、矩阵和资源绑定准备；GPU 负
 - [ ] HDR 合成、Bloom、Tone Mapping、SSAO
 - [ ] Cascaded Shadow Maps（CSM）
 - [ ] NPR Anime Shader：Toon、Face Shadow、Outline、Rim Light、Hair Highlight
-- [ ] ImGui Scene Window、Inspector、Material Editor
+- [ ] ImGui 统计面板已完成；Scene Window、Inspector、Material Editor 尚未开始
 - [ ] RenderDoc 性能采集和 GPU Pass 统计文档
 
 ## 5. 分阶段实施计划
@@ -214,7 +215,7 @@ CPU 负责场景代理、可见项列表、矩阵和资源绑定准备；GPU 负
 - Forward 和 Reflection 颜色目标仍以固定分辨率初始化，窗口 resize 只更新窗口 viewport 与帧尺寸，没有重建对应的 Framebuffer 附件。
 - Forward PBR 最多消费 16 盏灯；当前仍只有一张 2D shadow map，Point Light 阴影与多阴影灯尚未实现。
 - 透明、HDR、后处理和多灯光会显著扩大 GPU 资源与调试范围，应逐步加入 RenderDoc 基线。
-- 当前只完成编译、链接和 `FrustumTests` 自动验证，尚未启动图形程序；Visual Studio 2026 调试时应重点确认 PBR、阴影、反射、曲面细分、EditorPrimitive 灯光可视化及快捷键没有回归。
+
 
 ## 8. 最终展示目标
 

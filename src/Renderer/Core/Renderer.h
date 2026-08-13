@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "Renderer/Resources/CubemapTexture.h"
+#include "Renderer/Diagnostics/RenderSubmissionStats.h"
 #include "Renderer/Resources/Material.h"
 #include "Renderer/Resources/Mesh.h"
 #include "Renderer/Pipeline/RenderPipeline.h"
@@ -25,6 +26,20 @@
 class Renderer
 {
 public:
+    struct StatisticsSnapshot
+    {
+        std::size_t sourcePrimitiveCount = 0;
+        std::size_t visiblePrimitiveCount = 0;
+        std::size_t culledPrimitiveCount = 0;
+        std::size_t opaqueDrawCount = 0;
+        std::size_t translucentDrawCount = 0;
+        std::size_t shaderGroupCount = 0;
+        std::size_t materialGroupCount = 0;
+        std::size_t meshGroupCount = 0;
+        std::size_t meshResourceCount = 0;
+        std::size_t materialResourceCount = 0;
+    };
+
     Renderer();
     ~Renderer();
 
@@ -66,6 +81,14 @@ public:
     const GpuTimingSnapshot& GetGpuTimingSnapshot() const
     {
         return m_RenderPipeline.GetGpuTimingSnapshot();
+    }
+    const StatisticsSnapshot& GetStatisticsSnapshot() const
+    {
+        return m_StatisticsSnapshot;
+    }
+    RenderSubmissionSnapshot GetSubmissionSnapshot() const
+    {
+        return RenderSubmissionStats::Get().GetSnapshot();
     }
 
     std::size_t GetMeshResourceCount() const
@@ -127,6 +150,7 @@ private:
     CubemapTexture m_Cubemap;
     RenderPipeline m_RenderPipeline;
     TessellationSettings m_Tessellation;
+    StatisticsSnapshot m_StatisticsSnapshot;
     std::array<std::size_t, 9> m_LastMainViewStats{};
     bool m_HasMainViewStats = false;
     bool m_ShadowsEnabled = true;

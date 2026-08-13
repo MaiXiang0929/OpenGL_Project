@@ -167,3 +167,11 @@ void RenderSubmissionStats::RecordDrawCall()
     if (m_PassActive)
         ++m_Current[ToIndex(m_CurrentPass)].drawCalls;
 }
+
+RenderSubmissionSnapshot RenderSubmissionStats::GetSnapshot() const
+{
+    RenderSubmissionSnapshot snapshot;
+    snapshot.passes = m_Previous;
+    snapshot.valid = m_HasPrevious;
+    return snapshot;
+}

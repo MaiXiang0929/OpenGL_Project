@@ -17,6 +17,7 @@
 
 struct GLFWwindow;
 class Renderer;
+class RendererStatisticsPanel;
 
 /// @brief 应用程序核心管理类
 /// @details 该类负责管理整个程序的生命周期，包括初始化、主循环更新、渲染及资源清理。
@@ -41,6 +42,8 @@ private:
     GLFWwindow* m_Window        = nullptr;      ///< GLFW 窗口对象的指针句柄
 
     Renderer* m_Renderer        = nullptr;      ///< 渲染器对象的指针句柄
+    std::unique_ptr<RendererStatisticsPanel> m_StatisticsPanel;
+    bool m_ImGuiInitialized     = false;
 
 	Camera m_Camera;                            ///< 离屏渲染物体所使用的摄像机
 	Camera m_PlaneCamera;                       ///< 最终显示纹理平面所使用的摄像机
@@ -102,6 +105,13 @@ private:
     static void CursorPositionCallback(GLFWwindow* window,
         double xpos,
         double ypos);
+
+    static void ScrollCallback(GLFWwindow* window,
+        double xoffset,
+        double yoffset);
+
+    static void CharCallback(GLFWwindow* window,
+        unsigned int codepoint);
 
     static void KeyCallback(GLFWwindow* window,
         int key,

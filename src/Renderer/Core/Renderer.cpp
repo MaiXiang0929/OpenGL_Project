@@ -188,6 +188,20 @@ void Renderer::ExecutePipeline(RenderFrameData& frame)
     mainView.viewportWidth = frame.viewportWidth;
     mainView.viewportHeight = frame.viewportHeight;
     m_RenderScene.BuildRenderView(mainView);
+
+    // 主视图构建完成后固化只读快照，编辑器无需访问 RenderScene 或 Pass 私有容器。
+    m_StatisticsSnapshot = {
+        mainView.sourcePrimitiveCount,
+        mainView.visiblePrimitiveCount,
+        mainView.culledPrimitiveCount,
+        mainView.opaqueDrawCount,
+        mainView.translucentItems.size(),
+        mainView.opaqueShaderGroupCount,
+        mainView.opaqueMaterialGroupCount,
+        mainView.opaqueMeshGroupCount,
+        m_MeshResources.size(),
+        m_MaterialResources.size()
+    };
     LogMainViewStatsIfChanged(mainView);
 
     RenderView reflectionView;

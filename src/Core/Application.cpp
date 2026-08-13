@@ -6,10 +6,14 @@
 /// @date 2026-07-31
 
 #include"Application.h"
+#include "Editor/RendererStatisticsPanel.h"
 #include "Renderer/Core/Renderer.h"
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
+#include <imgui.h>
+#include <backends/imgui_impl_glfw.h>
+#include <backends/imgui_impl_opengl3.h>
 
 #include "cyTriMesh.h"
 
@@ -103,7 +107,9 @@ bool Application::Init() {
     glfwSetFramebufferSizeCallback(m_Window, FramebufferSizeCallback);
     glfwSetMouseButtonCallback(m_Window, MouseButtonCallback);
     glfwSetCursorPosCallback(m_Window, CursorPositionCallback);
+    glfwSetScrollCallback(m_Window, ScrollCallback);
     glfwSetKeyCallback(m_Window, KeyCallback);
+    glfwSetCharCallback(m_Window, CharCallback);
 
     // 初始化 GLAD
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
@@ -118,6 +124,25 @@ bool Application::Init() {
 
     // OpenGL 上下文已经可用，后续任一步失败都应由 Shutdown 统一释放资源。
     m_Initialized = true;
+
+    // Application 保留 GLFW 回调所有权，ImGui 后端只接收手动转发的输入事件。
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGui::StyleColorsDark();
+    const bool imguiPlatformInitialized =
+        ImGui_ImplGlfw_InitForOpenGL(m_Window, false);
+    const bool imguiRendererInitialized =
+        imguiPlatformInitialized && ImGui_ImplOpenGL3_Init("#version 400");
+    if (!imguiRendererInitialized)
+    {
+        if (imguiPlatformInitialized)
+            ImGui_ImplGlfw_Shutdown();
+        ImGui::DestroyContext();
+        std::cerr << "[Error] Failed to initialize ImGui backends." << std::endl;
+        return false;
+    }
+    m_ImGuiInitialized = true;
+    m_StatisticsPanel = std::make_unique<RendererStatisticsPanel>();
 
     // 离屏纹理为正方形，物体相机固定使用 1:1；平面相机跟随窗口宽高比。
     m_Camera.SetAspectRatio(1.0f);
@@ -504,11 +529,27 @@ void Application::Render() {
         m_PlaneCamera.GetProjectionMatrix() * m_PlaneCamera.GetViewMatrix();
     m_Renderer->ExecutePipeline(frame);
 
+    // PresentPass 完成后在默认帧缓冲绘制编辑器 UI，避免污染场景颜色目标。
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
+    ImGui::NewFrame();
+    m_StatisticsPanel->Draw(*m_Renderer);
+    ImGui::Render();
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
 }
 /// @brief 关闭应用程序
 void Application::Shutdown() {
 	
     if (!m_Initialized) return;
+
+    m_StatisticsPanel.reset();
+    if (m_ImGuiInitialized) {
+        ImGui_ImplOpenGL3_Shutdown();
+        ImGui_ImplGlfw_Shutdown();
+        ImGui::DestroyContext();
+        m_ImGuiInitialized = false;
+    }
 
 	// 释放渲染器资源
 	if (m_Renderer) {
@@ -549,7 +590,16 @@ void Application::FramebufferSizeCallback(GLFWwindow* window, int width, int hei
 }
 
 void Application::MouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
+    if (ImGui::GetCurrentContext())
+        ImGui_ImplGlfw_MouseButtonCallback(window, button, action, mods);
     Application* app = static_cast<Application*>(glfwGetWindowUserPointer(window));
+    if (!app)
+        return;
+    if (ImGui::GetCurrentContext() && ImGui::GetIO().WantCaptureMouse) {
+        app->m_LeftDown = false;
+        app->m_RightDown = false;
+        return;
+    }
     if (button == GLFW_MOUSE_BUTTON_LEFT) {
         if (action == GLFW_PRESS) app->m_LeftDown = true;
         else if (action == GLFW_RELEASE) app->m_LeftDown = false;
@@ -561,11 +611,19 @@ void Application::MouseButtonCallback(GLFWwindow* window, int button, int action
 }
 
 void Application::CursorPositionCallback(GLFWwindow* window, double xpos, double ypos) {
+    if (ImGui::GetCurrentContext())
+        ImGui_ImplGlfw_CursorPosCallback(window, xpos, ypos);
     Application* app = static_cast<Application*>(glfwGetWindowUserPointer(window));
+    if (!app)
+        return;
     double dx = xpos - app->m_LastX;
     double dy = ypos - app->m_LastY;
     app->m_LastX = xpos;
     app->m_LastY = ypos;
+
+    // 即使 UI 捕获鼠标也更新上一帧位置，离开面板后相机不会发生跳变。
+    if (ImGui::GetCurrentContext() && ImGui::GetIO().WantCaptureMouse)
+        return;
 
     const bool altDown =
         glfwGetKey(window, GLFW_KEY_LEFT_ALT) == GLFW_PRESS ||
@@ -594,8 +652,33 @@ void Application::CursorPositionCallback(GLFWwindow* window, double xpos, double
     }
 }
 
+void Application::ScrollCallback(
+    GLFWwindow* window,
+    double xoffset,
+    double yoffset)
+{
+    if (ImGui::GetCurrentContext())
+        ImGui_ImplGlfw_ScrollCallback(window, xoffset, yoffset);
+}
+
+void Application::CharCallback(GLFWwindow* window, unsigned int codepoint)
+{
+    if (ImGui::GetCurrentContext())
+        ImGui_ImplGlfw_CharCallback(window, codepoint);
+}
+
 void Application::KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
+    if (ImGui::GetCurrentContext())
+        ImGui_ImplGlfw_KeyCallback(window, key, scancode, action, mods);
     Application* app = static_cast<Application*>(glfwGetWindowUserPointer(window));
+    if (!app)
+        return;
+    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
+        glfwSetWindowShouldClose(window, true);
+        return;
+    }
+    if (ImGui::GetCurrentContext() && ImGui::GetIO().WantCaptureKeyboard)
+        return;
     // 着色器重载（F6）
     if (key == GLFW_KEY_F6 && action == GLFW_PRESS) {
 		app->m_Renderer->ReloadShaders();
@@ -645,7 +728,4 @@ void Application::KeyCallback(GLFWwindow* window, int key, int scancode, int act
         std::cout << "[Tessellation] Level: " << app->m_Renderer->GetTessellationLevel() << std::endl;
     }
 
-    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
-        glfwSetWindowShouldClose(window, true);
-    }
 }
