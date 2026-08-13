@@ -1,0 +1,22 @@
+// SPDX-License-Identifier: MIT
+#pragma once
+
+struct RenderTargetExtent
+{
+    unsigned int width = 0;
+    unsigned int height = 0;
+};
+
+/// Reflection keeps the main-view aspect ratio at half resolution.
+constexpr RenderTargetExtent CalculateReflectionTargetExtent(
+    unsigned int viewportWidth,
+    unsigned int viewportHeight)
+{
+    if (viewportWidth == 0 || viewportHeight == 0)
+        return {};
+
+    return {
+        viewportWidth / 2 + viewportWidth % 2,
+        viewportHeight / 2 + viewportHeight % 2
+    };
+}

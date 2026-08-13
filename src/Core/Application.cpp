@@ -98,7 +98,13 @@ bool Application::Init() {
 
 	glfwMakeContextCurrent(m_Window);   // 将窗口的上下文设置为当前线程的上下文
 
-
+    int framebufferWidth = 0;
+    int framebufferHeight = 0;
+    glfwGetFramebufferSize(m_Window, &framebufferWidth, &framebufferHeight);
+    if (framebufferWidth > 0 && framebufferHeight > 0) {
+        m_Width = static_cast<unsigned int>(framebufferWidth);
+        m_Height = static_cast<unsigned int>(framebufferHeight);
+    }
 
     // 将当前的 Application 实例指针绑定到 GLFW 窗口上
     glfwSetWindowUserPointer(m_Window, this);
@@ -144,10 +150,11 @@ bool Application::Init() {
     m_ImGuiInitialized = true;
     m_StatisticsPanel = std::make_unique<RendererStatisticsPanel>();
 
-    // 离屏纹理为正方形，物体相机固定使用 1:1；平面相机跟随窗口宽高比。
-    m_Camera.SetAspectRatio(1.0f);
-    m_PlaneCamera.SetAspectRatio(
-        static_cast<float>(m_Width) / static_cast<float>(m_Height));
+    // 主颜色目标和显示平面都跟随窗口 framebuffer 的像素宽高比。
+    const float framebufferAspect =
+        static_cast<float>(m_Width) / static_cast<float>(m_Height);
+    m_Camera.SetAspectRatio(framebufferAspect);
+    m_PlaneCamera.SetAspectRatio(framebufferAspect);
 
     std::cout << "[System] Engine Initialized Successfully! " << std::endl;
 
@@ -525,8 +532,13 @@ void Application::Render() {
     frame.groundMvp = projMatrix * viewMatrix * groundModel;
     frame.reflectionVP = projMatrix * reflectView;
     frame.cameraWorldPosition = cameraWorldPos;
+    const float framebufferAspect = m_Height > 0
+        ? static_cast<float>(m_Width) / static_cast<float>(m_Height)
+        : 1.0f;
     frame.presentMvp =
-        m_PlaneCamera.GetProjectionMatrix() * m_PlaneCamera.GetViewMatrix();
+        m_PlaneCamera.GetProjectionMatrix() *
+        m_PlaneCamera.GetViewMatrix() *
+        cy::Matrix4f::Scale(framebufferAspect, 1.0f, 1.0f);
     m_Renderer->ExecutePipeline(frame);
 
     // PresentPass 完成后在默认帧缓冲绘制编辑器 UI，避免污染场景颜色目标。
@@ -580,9 +592,11 @@ void Application::FramebufferSizeCallback(GLFWwindow* window, int width, int hei
         app->m_Width = width;
         app->m_Height = height;
 
-        if (height > 0) {
-            app->m_PlaneCamera.SetAspectRatio(
-                static_cast<float>(width) / static_cast<float>(height));
+        if (width > 0 && height > 0) {
+            const float aspect =
+                static_cast<float>(width) / static_cast<float>(height);
+            app->m_Camera.SetAspectRatio(aspect);
+            app->m_PlaneCamera.SetAspectRatio(aspect);
         }
 
         glViewport(0, 0, width, height);

@@ -15,7 +15,10 @@ public:
     {
     }
 
-    bool Init(unsigned int width, unsigned int height);
+    bool Init();
+    bool Resize(unsigned int width, unsigned int height);
+    int GetTargetWidth() const { return m_Framebuffer.GetWidth(); }
+    int GetTargetHeight() const { return m_Framebuffer.GetHeight(); }
     bool ReloadShaders();
 
     RenderPassType GetType() const override

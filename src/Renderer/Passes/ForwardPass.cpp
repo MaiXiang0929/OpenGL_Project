@@ -17,7 +17,7 @@ ForwardPass::~ForwardPass()
         glDeleteBuffers(1, &m_LightBuffer);
 }
 
-bool ForwardPass::Init(unsigned int width, unsigned int height)
+bool ForwardPass::Init()
 {
     const bool loaded = ReloadShaders();
     glGenBuffers(1, &m_LightBuffer);
@@ -28,8 +28,13 @@ bool ForwardPass::Init(unsigned int width, unsigned int height)
         nullptr,
         GL_DYNAMIC_DRAW);
     glBindBuffer(GL_UNIFORM_BUFFER, 0);
-    m_Framebuffer.Init(width, height);
     return loaded && m_LightBuffer != 0;
+}
+
+bool ForwardPass::Resize(unsigned int width, unsigned int height)
+{
+    return m_Framebuffer.Init(
+        static_cast<int>(width), static_cast<int>(height));
 }
 
 bool ForwardPass::ReloadShaders()

@@ -3,10 +3,15 @@
 
 #include "ForwardPass.h"
 
-bool ReflectionPass::Init(unsigned int width, unsigned int height)
+bool ReflectionPass::Init()
 {
-    m_Framebuffer.Init(width, height);
     return true;
+}
+
+bool ReflectionPass::Resize(unsigned int width, unsigned int height)
+{
+    return m_Framebuffer.Init(
+        static_cast<int>(width), static_cast<int>(height));
 }
 
 bool ReflectionPass::ReloadShaders()

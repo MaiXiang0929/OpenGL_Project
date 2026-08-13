@@ -39,6 +39,10 @@ public:
     }
 
 private:
+    bool EnsureRenderTargetExtents(
+        unsigned int viewportWidth,
+        unsigned int viewportHeight);
+
     ForwardPass m_ForwardPass;
     TranslucencyPass m_TranslucencyPass;
     EditorPrimitivePass m_EditorPrimitivePass;

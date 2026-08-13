@@ -34,8 +34,13 @@ Framebuffer::~Framebuffer() {
     Cleanup();
 }
 
-void Framebuffer::Init(int width, int height) {
-    if (m_Width == width && m_Height == height && m_FBO != 0) return;
+bool Framebuffer::Init(int width, int height) {
+    if (width <= 0 || height <= 0) {
+        std::cerr << "[Framebuffer] Rejected invalid extent "
+                  << width << "x" << height << "." << std::endl;
+        return false;
+    }
+    if (m_Width == width && m_Height == height && m_FBO != 0) return true;
 
     Cleanup(); // 清理旧数据（防止 Resize 时内存泄漏）
 
@@ -73,17 +78,25 @@ void Framebuffer::Init(int width, int height) {
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, m_RBO);
 
     // 4. 检查 FBO 完整性
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-        std::cerr << "[Error] Framebuffer is not complete!" << std::endl;
-    }
+    const bool complete =
+        glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    if (!complete) {
+        std::cerr << "[Framebuffer] Incomplete framebuffer at "
+                  << width << "x" << height << "." << std::endl;
+        Cleanup();
+        return false;
+    }
+    return true;
 }
 
 void Framebuffer::Cleanup() {
     if (m_RBO != 0) { glDeleteRenderbuffers(1, &m_RBO); m_RBO = 0; }
     if (m_ColorTexture != 0) { glDeleteTextures(1, &m_ColorTexture); m_ColorTexture = 0; }
     if (m_FBO != 0) { glDeleteFramebuffers(1, &m_FBO); m_FBO = 0; }
+    m_Width = 0;
+    m_Height = 0;
 }
 
 void Framebuffer::Bind() const {

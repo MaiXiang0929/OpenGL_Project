@@ -115,6 +115,7 @@ CPU 负责场景代理、可见项列表、矩阵和资源绑定准备；GPU 负
 - [x] 基于 `TranslucencyPass mesh=3/1` 基线实现最小 VAO 状态缓存，RenderDoc 捕获流程和数据记录于 `docs/renderdoc-baseline.md`
 - [x] 三帧缓冲的 GPU Timer Query 已输出各 Pass last/EMA 时间，并以非阻塞方式处理尚未完成的 Query
 - [x] ImGui `Renderer Statistics` 面板已显示场景、资源、CPU/GPU Pass 统计，并提供常用渲染调试参数
+- [x] Forward 与 Reflection 离屏目标已随窗口 framebuffer 动态重建；反射保持半分辨率，最小化时跳过零尺寸渲染
 - [x] CMake 构建时清理并复制最新 assets
 - [x] CMake 配置、编译、链接通过；本阶段未启动可执行文件
 
@@ -212,7 +213,7 @@ CPU 负责场景代理、可见项列表、矩阵和资源绑定准备；GPU 负
 - 主视图、反射视图和阴影视图每帧分别遍历场景并重建 `RenderItem` 列表；对象规模扩大后需要评估重复 CPU 遍历、容器填充和包围体变换成本。
 - 不透明列表已按稳定资源 ID 排序并支持共享 Mesh/Material；VAO 已由 Pass 内状态缓存管理，Shader 与 Texture 仍直接绑定，需在更大场景基线下再评估。
 - 透明排序使用物体包围球中心的观察空间深度，只覆盖主视图；相交网格、网格内部三角形顺序、纹理 Alpha 与透明反射仍未处理。
-- Forward 和 Reflection 颜色目标仍以固定分辨率初始化，窗口 resize 只更新窗口 viewport 与帧尺寸，没有重建对应的 Framebuffer 附件。
+- Resize 会在渲染线程立即重建 Forward/Reflection 颜色与深度附件；持续拖动窗口可能产生重复 GPU 分配，后续可结合 Render Graph 资源池或 resize debounce 优化。
 - Forward PBR 最多消费 16 盏灯；当前仍只有一张 2D shadow map，Point Light 阴影与多阴影灯尚未实现。
 - 透明、HDR、后处理和多灯光会显著扩大 GPU 资源与调试范围，应逐步加入 RenderDoc 基线。
 

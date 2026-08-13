@@ -21,7 +21,7 @@ public:
     /// @brief 初始化或重新创建 Framebuffer
     /// @param width 缓冲区宽度
     /// @param height 缓冲区高度
-    void Init(int width, int height);
+    bool Init(int width, int height);
 
     /// @brief 释放内部 OpenGL 资源
     void Cleanup();

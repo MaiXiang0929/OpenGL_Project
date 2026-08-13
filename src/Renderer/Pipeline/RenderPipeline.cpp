@@ -13,6 +13,7 @@
 #include "Renderer/Diagnostics/GpuDebugScope.h"
 #include "Renderer/Diagnostics/RenderSubmissionStats.h"
 #include "Renderer/Core/OpenGLStateCache.h"
+#include "Renderer/Pipeline/RenderTargetSizing.h"
 
 namespace
 {
@@ -50,9 +51,9 @@ RenderPipeline::RenderPipeline()
 
 bool RenderPipeline::Init()
 {
-    const bool forwardLoaded = m_ForwardPass.Init(1024, 1024);
+    const bool forwardLoaded = m_ForwardPass.Init();
     const bool shadowLoaded = m_ShadowPass.Init(2048, 2048);
-    const bool reflectionLoaded = m_ReflectionPass.Init(512, 512);
+    const bool reflectionLoaded = m_ReflectionPass.Init();
     const bool editorPrimitivesLoaded = m_EditorPrimitivePass.Init();
     const bool presentLoaded = m_PresentPass.Init();
     const bool profilerInitialized = m_GpuProfiler.Init();
@@ -78,6 +79,15 @@ bool RenderPipeline::ReloadShaders()
 
 void RenderPipeline::Execute(RenderPassContext& context)
 {
+    if (context.frame.viewportWidth == 0 ||
+        context.frame.viewportHeight == 0)
+        return;
+
+    if (!EnsureRenderTargetExtents(
+            context.frame.viewportWidth,
+            context.frame.viewportHeight))
+        return;
+
     RenderSubmissionStats& stats = RenderSubmissionStats::Get();
     stats.BeginFrame();
     m_GpuProfiler.BeginFrame();
@@ -94,4 +104,40 @@ void RenderPipeline::Execute(RenderPassContext& context)
     }
     stats.EndFrame();
     m_GpuProfiler.EndFrame();
+}
+
+bool RenderPipeline::EnsureRenderTargetExtents(
+    unsigned int viewportWidth,
+    unsigned int viewportHeight)
+{
+    bool resized = false;
+    const bool forwardMatches =
+        m_ForwardPass.GetTargetWidth() == static_cast<int>(viewportWidth) &&
+        m_ForwardPass.GetTargetHeight() == static_cast<int>(viewportHeight);
+    if (!forwardMatches && !m_ForwardPass.Resize(viewportWidth, viewportHeight))
+        return false;
+    resized |= !forwardMatches;
+
+    const RenderTargetExtent reflectionExtent =
+        CalculateReflectionTargetExtent(viewportWidth, viewportHeight);
+    const bool reflectionMatches =
+        m_ReflectionPass.GetTargetWidth() ==
+            static_cast<int>(reflectionExtent.width) &&
+        m_ReflectionPass.GetTargetHeight() ==
+            static_cast<int>(reflectionExtent.height);
+    if (!reflectionMatches && !m_ReflectionPass.Resize(
+            reflectionExtent.width, reflectionExtent.height))
+        return false;
+    resized |= !reflectionMatches;
+
+    if (resized)
+    {
+        std::cout
+            << "[RenderPipeline] Render targets resized: Forward="
+            << viewportWidth << "x" << viewportHeight
+            << ", Reflection=" << reflectionExtent.width << "x"
+            << reflectionExtent.height << std::endl;
+    }
+
+    return true;
 }

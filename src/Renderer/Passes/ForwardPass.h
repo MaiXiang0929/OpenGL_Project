@@ -16,7 +16,8 @@ class ForwardPass final : public RenderPass
 public:
     ~ForwardPass() override;
 
-    bool Init(unsigned int width, unsigned int height);
+    bool Init();
+    bool Resize(unsigned int width, unsigned int height);
     bool ReloadShaders();
 
     RenderPassType GetType() const override { return RenderPassType::Forward; }

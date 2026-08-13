@@ -245,4 +245,17 @@ if(BUILD_TESTING)
     )
 
     add_test(NAME LightRenderDataTests COMMAND LightRenderDataTests)
+
+    add_executable(
+        RenderTargetSizingTests
+        tests/Renderer/Pipeline/RenderTargetSizingTests.cpp
+    )
+
+    target_include_directories(
+        RenderTargetSizingTests
+        PRIVATE
+        ${SRC_DIR}
+    )
+
+    add_test(NAME RenderTargetSizingTests COMMAND RenderTargetSizingTests)
 endif()
