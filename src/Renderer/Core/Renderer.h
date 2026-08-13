@@ -33,6 +33,18 @@ public:
 
     bool Init();
 
+    MeshHandle CreateMesh(const std::vector<Vertex>& vertices);
+    MaterialHandle CreateMaterial(Material material);
+
+    PrimitiveId AddPrimitive(
+        MeshHandle mesh,
+        MaterialHandle material,
+        const cy::Matrix4f& localToWorld,
+        PrimitiveBounds bounds = {},
+        bool castsShadow = true,
+        bool translucent = false);
+
+    /// @brief 便利接口：创建独立 Mesh/Material 后提交一个 Primitive。
     PrimitiveId AddPrimitive(
         const std::vector<Vertex>& vertices,
         Material material,
@@ -51,6 +63,15 @@ public:
 
     void ExecutePipeline(RenderFrameData& frame);
     void ReloadShaders();
+
+    std::size_t GetMeshResourceCount() const
+    {
+        return m_MeshResources.size();
+    }
+    std::size_t GetMaterialResourceCount() const
+    {
+        return m_MaterialResources.size();
+    }
 
     void SetShadowsEnabled(bool enabled) { m_ShadowsEnabled = enabled; }
     bool IsShadowsEnabled() const { return m_ShadowsEnabled; }
@@ -95,15 +116,14 @@ private:
     Mesh m_SkyboxMesh;
     Mesh m_GroundMesh;
 
-    std::vector<std::unique_ptr<Mesh>> m_PrimitiveMeshes;
-    std::vector<std::unique_ptr<Material>> m_PrimitiveMaterials;
+    // Renderer 唯一拥有场景 GPU 资源；Scene Proxy 只缓存解析后的非 owning 指针。
+    std::vector<std::unique_ptr<Mesh>> m_MeshResources;
+    std::vector<std::unique_ptr<Material>> m_MaterialResources;
     RenderScene m_RenderScene;
     CubemapTexture m_Cubemap;
     RenderPipeline m_RenderPipeline;
     TessellationSettings m_Tessellation;
-    std::array<std::size_t, 7> m_LastMainViewStats{};
-    RenderResourceId m_NextMaterialId = 0;
-    RenderResourceId m_NextMeshId = 0;
+    std::array<std::size_t, 9> m_LastMainViewStats{};
     bool m_HasMainViewStats = false;
     bool m_ShadowsEnabled = true;
     bool m_EditorPrimitivesEnabled = true;

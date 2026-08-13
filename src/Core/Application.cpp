@@ -303,6 +303,8 @@ bool Application::Init() {
         cy::Matrix4f::Translation(-m_ObjCenter),
         bounds);
 
+    CreateTranslucencyTestScene();
+
     LightSceneProxy mainLight;
     mainLight.type = LightType::Spot;
     mainLight.position = cy::Vec3f(0.0f, 10.0f, 20.0f);
@@ -335,6 +337,74 @@ bool Application::Init() {
     glfwGetCursorPos(m_Window, &m_LastX, &m_LastY);
 
     return true;
+}
+
+void Application::CreateTranslucencyTestScene()
+{
+    if (m_Renderer == nullptr || m_ModelDiameter <= 0.0f)
+        return;
+
+    const float halfWidth = m_ModelDiameter * 0.24f;
+    const float halfHeight = m_ModelDiameter * 0.38f;
+    const cy::Vec3f normal(0.0f, 0.0f, 1.0f);
+    const cy::Vec4f tangent(1.0f, 0.0f, 0.0f, 1.0f);
+
+    // 三张平面使用相同局部网格，并在世界空间中错开位置；重叠区域用于观察混合顺序。
+    const std::vector<Vertex> planeVertices = {
+        {{-halfWidth, -halfHeight, 0.0f}, normal, {0.0f, 0.0f}, tangent},
+        {{ halfWidth, -halfHeight, 0.0f}, normal, {1.0f, 0.0f}, tangent},
+        {{ halfWidth,  halfHeight, 0.0f}, normal, {1.0f, 1.0f}, tangent},
+        {{-halfWidth, -halfHeight, 0.0f}, normal, {0.0f, 0.0f}, tangent},
+        {{ halfWidth,  halfHeight, 0.0f}, normal, {1.0f, 1.0f}, tangent},
+        {{-halfWidth,  halfHeight, 0.0f}, normal, {0.0f, 1.0f}, tangent}
+    };
+
+    struct TestLayer
+    {
+        cy::Vec3f color;
+        float opacity;
+        cy::Vec3f position;
+    };
+
+    const TestLayer layers[] = {
+        {cy::Vec3f(0.08f, 0.85f, 0.95f), 0.28f,
+            cy::Vec3f(-m_ModelDiameter * 0.16f, 0.0f, -m_ModelDiameter * 0.28f)},
+        {cy::Vec3f(0.95f, 0.10f, 0.55f), 0.42f,
+            cy::Vec3f(0.0f, 0.0f, 0.0f)},
+        {cy::Vec3f(0.95f, 0.78f, 0.08f), 0.58f,
+            cy::Vec3f(m_ModelDiameter * 0.16f, 0.0f, m_ModelDiameter * 0.28f)}
+    };
+
+    PrimitiveBounds bounds;
+    bounds.radius = std::sqrt(
+        halfWidth * halfWidth + halfHeight * halfHeight);
+    const MeshHandle planeMesh = m_Renderer->CreateMesh(planeVertices);
+    if (!planeMesh.IsValid())
+        return;
+
+    for (const TestLayer& layer : layers)
+    {
+        Material material;
+        MaterialProperties& properties = material.GetProperties();
+        properties.baseColor = layer.color;
+        properties.roughness = 0.65f;
+        properties.environmentReflectivity = 0.05f;
+        properties.opacity = layer.opacity;
+        const MaterialHandle materialHandle =
+            m_Renderer->CreateMaterial(std::move(material));
+        if (!materialHandle.IsValid())
+            continue;
+
+        // 三个 Primitive 共享同一份 VAO/VBO，只保留各自的材质与 Transform。
+        // 测试平面不投射阴影，避免把透明混合验收与 Alpha 阴影需求混在一起。
+        m_Renderer->AddPrimitive(
+            planeMesh,
+            materialHandle,
+            cy::Matrix4f::Translation(layer.position),
+            bounds,
+            false,
+            true);
+    }
 }
 
 /// @brief 更新应用程序状态

@@ -6,6 +6,7 @@
 
 #include "cyMatrix.h"
 #include "cyVector.h"
+#include "Renderer/Resources/RenderResourceHandle.h"
 
 class Material;
 class Mesh;
@@ -13,11 +14,6 @@ class Mesh;
 using PrimitiveId = std::uint32_t;
 constexpr PrimitiveId InvalidPrimitiveId =
     std::numeric_limits<PrimitiveId>::max();
-
-using RenderResourceId = std::uint32_t;
-constexpr RenderResourceId InvalidRenderResourceId =
-    std::numeric_limits<RenderResourceId>::max();
-constexpr RenderResourceId DefaultSurfaceShaderId = 0;
 
 struct PrimitiveBounds
 {

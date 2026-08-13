@@ -62,6 +62,72 @@ bool Renderer::Init()
     return true;
 }
 
+MeshHandle Renderer::CreateMesh(const std::vector<Vertex>& vertices)
+{
+    if (m_MeshResources.size() >= InvalidRenderResourceId)
+    {
+        std::cerr << "[Renderer] Mesh resource handle space exhausted."
+                  << std::endl;
+        return {};
+    }
+
+    auto resource = std::make_unique<Mesh>();
+    resource->Upload(vertices);
+    const MeshHandle handle{
+        static_cast<RenderResourceId>(m_MeshResources.size())
+    };
+    m_MeshResources.push_back(std::move(resource));
+    return handle;
+}
+
+MaterialHandle Renderer::CreateMaterial(Material material)
+{
+    if (m_MaterialResources.size() >= InvalidRenderResourceId)
+    {
+        std::cerr << "[Renderer] Material resource handle space exhausted."
+                  << std::endl;
+        return {};
+    }
+
+    const MaterialHandle handle{
+        static_cast<RenderResourceId>(m_MaterialResources.size())
+    };
+    m_MaterialResources.push_back(
+        std::make_unique<Material>(std::move(material)));
+    return handle;
+}
+
+PrimitiveId Renderer::AddPrimitive(
+    MeshHandle mesh,
+    MaterialHandle material,
+    const cy::Matrix4f& localToWorld,
+    PrimitiveBounds bounds,
+    bool castsShadow,
+    bool translucent)
+{
+    if (!mesh.IsValid() || !material.IsValid() ||
+        mesh.id >= m_MeshResources.size() ||
+        material.id >= m_MaterialResources.size())
+    {
+        std::cerr << "[Renderer] AddPrimitive rejected invalid resource handle."
+                  << std::endl;
+        return InvalidPrimitiveId;
+    }
+
+    PrimitiveSceneProxy proxy;
+    proxy.mesh = m_MeshResources[mesh.id].get();
+    proxy.material = m_MaterialResources[material.id].get();
+    proxy.shaderId = DefaultSurfaceShaderId;
+    proxy.materialId = material.id;
+    proxy.meshId = mesh.id;
+    proxy.localToWorld = localToWorld;
+    proxy.localBounds = bounds;
+    proxy.castsShadow = castsShadow;
+    proxy.translucent = translucent;
+
+    return m_RenderScene.AddPrimitive(proxy);
+}
+
 PrimitiveId Renderer::AddPrimitive(
     const std::vector<Vertex>& vertices,
     Material material,
@@ -70,24 +136,15 @@ PrimitiveId Renderer::AddPrimitive(
     bool castsShadow,
     bool translucent)
 {
-    auto mesh = std::make_unique<Mesh>();
-    mesh->Upload(vertices);
-    auto materialResource = std::make_unique<Material>(std::move(material));
-
-    PrimitiveSceneProxy proxy;
-    proxy.mesh = mesh.get();
-    proxy.material = materialResource.get();
-    proxy.shaderId = DefaultSurfaceShaderId;
-    proxy.materialId = m_NextMaterialId++;
-    proxy.meshId = m_NextMeshId++;
-    proxy.localToWorld = localToWorld;
-    proxy.localBounds = bounds;
-    proxy.castsShadow = castsShadow;
-    proxy.translucent = translucent;
-
-    m_PrimitiveMeshes.push_back(std::move(mesh));
-    m_PrimitiveMaterials.push_back(std::move(materialResource));
-    return m_RenderScene.AddPrimitive(proxy);
+    const MeshHandle mesh = CreateMesh(vertices);
+    const MaterialHandle materialHandle = CreateMaterial(std::move(material));
+    return AddPrimitive(
+        mesh,
+        materialHandle,
+        localToWorld,
+        bounds,
+        castsShadow,
+        translucent);
 }
 
 bool Renderer::UpdatePrimitiveTransform(
@@ -168,14 +225,16 @@ void Renderer::ExecutePipeline(RenderFrameData& frame)
 
 void Renderer::LogMainViewStatsIfChanged(const RenderView& view)
 {
-    const std::array<std::size_t, 7> stats = {
+    const std::array<std::size_t, 9> stats = {
         view.sourcePrimitiveCount,
         view.visiblePrimitiveCount,
         view.culledPrimitiveCount,
         view.opaqueDrawCount,
         view.opaqueShaderGroupCount,
         view.opaqueMaterialGroupCount,
-        view.opaqueMeshGroupCount
+        view.opaqueMeshGroupCount,
+        m_MeshResources.size(),
+        m_MaterialResources.size()
     };
     if (m_HasMainViewStats && stats == m_LastMainViewStats)
         return;
@@ -190,6 +249,8 @@ void Renderer::LogMainViewStatsIfChanged(const RenderView& view)
         << " shaderGroups=" << stats[4]
         << " materialGroups=" << stats[5]
         << " meshGroups=" << stats[6]
+        << " meshResources=" << stats[7]
+        << " materialResources=" << stats[8]
         << std::endl;
 }
 

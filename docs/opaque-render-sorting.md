@@ -10,7 +10,7 @@ GPU 仍负责顶点处理、光栅化、深度测试、材质着色和纹理采�
 
 `PrimitiveSceneProxy` 和 `RenderItem` 保存由 Renderer 分配的 `shaderId`、`materialId` 与 `meshId`。这些 ID 在对应资源的生命周期内保持稳定，避免使用非 owning 指针地址决定排序顺序。
 
-当前 `Renderer::AddPrimitive()` 会为每个 Primitive 分别创建一个 Mesh 和一个 Material，因此现阶段这些 ID 各自唯一。排序键的数据布局已经为后续资源共享和材质实例预留扩展能力，无需修改 RenderView 契约。
+Renderer 通过强类型 `MeshHandle` 与 `MaterialHandle` 分配稳定资源 ID。多个 Primitive 可以引用相同 Handle，因此会在 `PrimitiveSceneProxy` 和 `RenderItem` 中保留相同资源 ID 与非 owning 指针；排序不依赖指针地址。资源所有权与限制见 `docs/shared-render-resources.md`。
 
 ## 视图排序策略
 
@@ -34,7 +34,7 @@ Shader -> Mesh -> Material -> Primitive
 
 ## 运行时统计
 
-主视图会输出场景源对象数、可见对象数、被裁剪对象数、不透明 Draw 数，以及 Shader、Material 和 Mesh 分组数。只有统计值发生变化时才输出日志。分组数用于描述 CPU 绘制提交的相邻关系，不代表 GPU 时间，也不能证明所有重复的 OpenGL 绑定调用都已消除。
+主视图会输出场景源对象数、可见对象数、被裁剪对象数、不透明 Draw 数、Shader/Material/Mesh 分组数，以及 Renderer 拥有的唯一 Mesh/Material 资源数。只有统计值发生变化时才输出日志。分组数用于描述 CPU 绘制提交的相邻关系，不代表 GPU 时间，也不能证明所有重复的 OpenGL 绑定调用都已消除。
 
 ## 性能考量
 

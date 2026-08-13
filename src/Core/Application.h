@@ -75,6 +75,9 @@ private:
     /// @brief 初始化应用程序
     /// @return 初始化成功返回 true，否则返回 false
     bool Init();
+
+    /// @brief 创建用于验收透明排序、混合和深度遮挡的最小场景。
+    void CreateTranslucencyTestScene();
     
 	/// @brief 更新应用程序状态
     void Update();

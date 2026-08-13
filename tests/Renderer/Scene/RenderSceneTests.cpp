@@ -159,6 +159,33 @@ void TestTranslucentBackToFrontStableSorting()
         view.translucentItems[2].sortDepth == -2.0f,
         "Translucent sort depth should use the world bounds center in view space.");
 }
+
+void TestSharedResourceIdentitySurvivesViewBuild()
+{
+    RenderScene scene;
+    PrimitiveSceneProxy first = MakePrimitive(0, 11, 7);
+    PrimitiveSceneProxy second = MakePrimitive(0, 12, 7);
+    second.mesh = first.mesh;
+    scene.AddPrimitive(first);
+    scene.AddPrimitive(second);
+
+    RenderView view;
+    view.type = RenderViewType::Main;
+    view.frustumCullingEnabled = false;
+    scene.BuildRenderView(view);
+
+    Require(view.opaqueItems.size() == 2,
+        "Expected both shared-resource primitives in the render view.");
+    Require(
+        view.opaqueItems[0].mesh == view.opaqueItems[1].mesh &&
+        view.opaqueItems[0].meshId == 7 &&
+        view.opaqueItems[1].meshId == 7,
+        "Render items must preserve the shared mesh pointer and stable handle ID.");
+    Require(
+        view.opaqueItems[0].materialId == 11 &&
+        view.opaqueItems[1].materialId == 12,
+        "Shared mesh instances must retain independent material identities.");
+}
 }
 
 int main()
@@ -167,6 +194,7 @@ int main()
     TestReflectionUsesSurfaceSortPolicy();
     TestShadowViewSorting();
     TestTranslucentBackToFrontStableSorting();
+    TestSharedResourceIdentitySurvivesViewBuild();
     std::cout << "RenderScene tests passed." << std::endl;
     return EXIT_SUCCESS;
 }
