@@ -8,6 +8,7 @@
 #include"Application.h"
 #include "Editor/RendererStatisticsPanel.h"
 #include "Renderer/Core/Renderer.h"
+#include "InstanceGrid.h"
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -25,7 +26,10 @@
 #include <vector>
 
 /// @brief 构造函数
-Application::Application(std::string normalMapPath, std::string displacementMapPath)
+Application::Application(
+    std::string normalMapPath,
+    std::string displacementMapPath,
+    std::uint32_t instanceGridSize)
     :
     m_Camera(
         cy::Vec3f(0, 0, 0),
@@ -36,7 +40,8 @@ Application::Application(std::string normalMapPath, std::string displacementMapP
         3.5f
     ),
     m_NormalMapPath(std::move(normalMapPath)),
-    m_DisplacementMapPath(std::move(displacementMapPath))
+    m_DisplacementMapPath(std::move(displacementMapPath)),
+    m_InstanceGridSize(instanceGridSize)
 {
     
 }
@@ -200,9 +205,6 @@ bool Application::Init() {
     // 根据包围盒自动调整观察距离，使不同尺寸的模型都能进入离屏画面。
     const float modelDiameter = (mesh.GetBoundMax() - mesh.GetBoundMin()).Length();
     m_ModelDiameter = modelDiameter;
-    // 地面放在模型底部稍下方，避免与模型底部重叠
-    m_GroundY = mesh.GetBoundMin().y - modelDiameter * 0.02f;
-    m_Camera.SetDistance(modelDiameter > 0.0f ? modelDiameter * 1.25f : 5.0f);
 
     std::vector<Vertex> vertices;
     vertices.reserve(static_cast<size_t>(mesh.NF()) * 3);
@@ -330,11 +332,65 @@ bool Application::Init() {
     PrimitiveBounds bounds;
     bounds.center = m_ObjCenter;
     bounds.radius = m_ModelDiameter * 0.5f;
-    m_MainPrimitiveId = m_Renderer->AddPrimitive(
-        vertices,
-        std::move(mainMaterial),
-        cy::Matrix4f::Translation(-m_ObjCenter),
-        bounds);
+    const std::uint32_t effectiveGridSize =
+        m_InstanceGridSize == 0 ? 1 : m_InstanceGridSize;
+    const float instanceSpacing = std::max(m_ModelDiameter * 1.25f, 0.001f);
+    const std::vector<cy::Vec3f> instanceOffsets = BuildInstanceGridOffsets(
+        effectiveGridSize, instanceSpacing);
+    m_SceneRadius = CalculateInstanceGridSceneRadius(
+        effectiveGridSize, instanceSpacing, bounds.radius);
+    const float gridHalfSpan =
+        static_cast<float>(effectiveGridSize - 1) * instanceSpacing * 0.5f;
+    m_GroundY = mesh.GetBoundMin().y - m_ObjCenter.y - gridHalfSpan -
+        modelDiameter * 0.02f;
+    const float cameraDistance = modelDiameter > 0.0f
+        ? std::max(modelDiameter * 1.25f, m_SceneRadius * 2.5f)
+        : 5.0f;
+    m_Camera.SetDistance(cameraDistance);
+    m_Camera.SetClipPlanes(
+        0.1f,
+        std::max(1000.0f, cameraDistance + m_SceneRadius * 1.5f));
+
+    const MeshHandle instanceMesh = m_Renderer->CreateMesh(vertices);
+    const MaterialHandle instanceMaterial =
+        m_Renderer->CreateMaterial(std::move(mainMaterial));
+    if (!instanceMesh.IsValid() || !instanceMaterial.IsValid())
+    {
+        std::cerr << "[Error] Failed to create shared instance resources."
+                  << std::endl;
+        return false;
+    }
+
+    for (const cy::Vec3f& offset : instanceOffsets)
+    {
+        const cy::Matrix4f localToWorld =
+            cy::Matrix4f::Translation(offset) *
+            cy::Matrix4f::Translation(-m_ObjCenter);
+        const PrimitiveId primitiveId = m_Renderer->AddPrimitive(
+            instanceMesh,
+            instanceMaterial,
+            localToWorld,
+            bounds);
+        if (m_MainPrimitiveId == InvalidPrimitiveId)
+            m_MainPrimitiveId = primitiveId;
+    }
+    if (m_MainPrimitiveId == InvalidPrimitiveId)
+    {
+        std::cerr << "[Error] Failed to submit the opaque instance scene."
+                  << std::endl;
+        return false;
+    }
+    if (m_InstanceGridSize > 0)
+    {
+        std::cout
+            << "[InstanceBenchmark] grid=" << effectiveGridSize << "x"
+            << effectiveGridSize
+            << " instances=" << instanceOffsets.size()
+            << " meshResource=" << instanceMesh.id
+            << " materialResource=" << instanceMaterial.id
+            << " sceneRadius=" << m_SceneRadius
+            << std::endl;
+    }
 
     CreateTranslucencyTestScene();
 
@@ -461,7 +517,12 @@ void Application::Render() {
     cy::Matrix4f modelMatrix = cy::Matrix4f::Translation(-m_ObjCenter);
 
     // 光源世界位置
-    const cy::Vec3f lightBasePos(0.0f, 10.0f, 20.0f);
+    const float lightDistance = std::max(
+        std::sqrt(500.0f), m_SceneRadius * 2.5f);
+    const cy::Vec3f lightBasePos(
+        0.0f,
+        lightDistance / std::sqrt(5.0f),
+        lightDistance * 2.0f / std::sqrt(5.0f));
     const cy::Matrix4f lightRotation =
         cy::Matrix4f::RotationX(m_LightRotX) *
         cy::Matrix4f::RotationY(m_LightRotY);
@@ -483,15 +544,18 @@ void Application::Render() {
 
     // 根据模型包围球自动拟合聚光灯锥体，兼容不同尺寸的命令行 OBJ。
     constexpr float Pi = 3.14159265358979323846f;
-    const float sceneRadius = std::max(m_ModelDiameter * 0.5f, 1.0f);
-    const float lightDistance = std::max(lightWorldPosition.Length(), 0.001f);
-    const float angularRadius = std::asin(std::min(sceneRadius / lightDistance, 0.95f));
+    const float sceneRadius = std::max(m_SceneRadius, 1.0f);
+    const float shadowLightDistance =
+        std::max(lightWorldPosition.Length(), 0.001f);
+    const float angularRadius = std::asin(
+        std::min(sceneRadius / shadowLightDistance, 0.95f));
     const float lightFov = std::clamp(
         angularRadius * 2.0f + 10.0f * Pi / 180.0f,
         60.0f * Pi / 180.0f,
         150.0f * Pi / 180.0f);
-    const float lightNear = std::max(0.1f, lightDistance - sceneRadius * 1.25f);
-    const float lightFar = lightDistance + sceneRadius * 2.0f;
+    const float lightNear = std::max(
+        0.1f, shadowLightDistance - sceneRadius * 1.25f);
+    const float lightFar = shadowLightDistance + sceneRadius * 2.0f;
     const cy::Matrix4f lightProjection = cy::Matrix4f::Perspective(
         lightFov, 1.0f, lightNear, lightFar);
     const cy::Matrix4f lightVP = lightProjection * lightView;
@@ -510,12 +574,14 @@ void Application::Render() {
         viewMatrix.cell[10] * dist
     );
 
-    const float groundSize = m_ModelDiameter * 2.0f;
+    const float groundSize = std::max(
+        m_ModelDiameter * 2.0f, m_SceneRadius * 2.0f);
     const cy::Matrix4f groundModel =
         cy::Matrix4f::Translation(cy::Vec3f(
             -m_ObjCenter.x, m_GroundY, -m_ObjCenter.z)) *
         cy::Matrix4f::Scale(groundSize, 1.0f, groundSize);
-    m_Renderer->UpdatePrimitiveTransform(m_MainPrimitiveId, modelMatrix);
+    if (m_InstanceGridSize == 0)
+        m_Renderer->UpdatePrimitiveTransform(m_MainPrimitiveId, modelMatrix);
 
     LightSceneProxy mainLight;
     mainLight.type = LightType::Spot;

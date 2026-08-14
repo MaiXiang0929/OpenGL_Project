@@ -111,6 +111,7 @@ CPU 负责场景代理、可见项列表、矩阵和资源绑定准备；GPU 负
 - [x] 独立 `TranslucencyPass` 已支持主视图与反射视图透明物体从后向前稳定排序、纹理 Alpha、显式 Blend Mode、Alpha Blend 和深度只读
 - [x] PBR 使用 std140 UBO 消费最多 16 盏 Directional/Point/Spot 灯光，并为单一 2D shadow map 记录对应灯光索引
 - [x] Renderer 已提供强类型 Mesh/Material Handle 与共享资源提交接口；透明测试场景的三张平面共享一份 Mesh
+- [x] `--instance-grid N` 已提供默认关闭的共享资源多实例基准；1/64/256 实例运行数据与 RenderDoc 捕获记录于 `docs/instance-benchmark.md`
 - [x] RenderPipeline 已加入可选 GPU Debug Group，各 Pass 具备 Draw 与 Shader/Material/Mesh/Texture 提交统计
 - [x] 基于 `TranslucencyPass mesh=3/1` 基线实现最小 VAO 状态缓存，RenderDoc 捕获流程和数据记录于 `docs/renderdoc-baseline.md`
 - [x] 三帧缓冲的 GPU Timer Query 已输出各 Pass last/EMA 时间，并以非阻塞方式处理尚未完成的 Query
@@ -118,7 +119,7 @@ CPU 负责场景代理、可见项列表、矩阵和资源绑定准备；GPU 负
 - [x] Forward 与 Reflection 离屏目标已随窗口 framebuffer 动态重建；反射保持半分辨率，最小化时跳过零尺寸渲染
 - [x] Forward Scene Color 已升级为 RGBA16F，PresentPass 支持手动曝光、ACES Tone Mapping 与 sRGB 输出编码
 - [x] CMake 构建时清理并复制最新 assets
-- [x] CMake 配置、编译、链接与 5 项测试通过；5 秒运行诊断完成 OpenGL/Shader 初始化并验证 Reflection 透明 Draw
+- [x] CMake 配置、编译、链接与 6 项测试通过；多实例 1/8/16 网格运行诊断及 16x16 RenderDoc 捕获完成
 
 ### 部分完成
 
@@ -128,7 +129,7 @@ CPU 负责场景代理、可见项列表、矩阵和资源绑定准备；GPU 负
 
 ### 尚未开始
 
-- [ ] 共享 Mesh/Material 与 VAO 状态缓存已完成，但 Shader/Texture 缓存、Instancing 和批处理尚未实现
+- [ ] 共享 Mesh/Material、VAO 状态缓存与多实例基线已完成，但 Shader/Texture 缓存、Instancing 和批处理尚未实现
 - [ ] HDR Scene Color、手动曝光与 Tone Mapping 已完成；Bloom、自动曝光与 SSAO 尚未实现
 - [ ] Cascaded Shadow Maps（CSM）
 - [ ] NPR Anime Shader：Toon、Face Shadow、Outline、Rim Light、Hair Highlight
@@ -202,7 +203,7 @@ CPU 负责场景代理、可见项列表、矩阵和资源绑定准备；GPU 负
 下一次实现前仍遵循“先给方案、确认后执行”的协作流程。建议优先顺序为：
 
 1. 将视图、提交统计与 GPU Pass 时间快照接入后续 ImGui 性能面板。
-2. 扩充多实例场景后再次使用 RenderDoc 评估 Instancing；当前基线不支持盲目增加 Shader/Texture 缓存。
+2. 基于 256 实例 Forward `258 Draw`、Material `256/1`、Texture `1030/9` 基线，实现共享 Shader/Material/Mesh 不透明批次的 Instancing；完成后再评估 Texture cache。
 3. 为透明材质补充 Masked/Additive 模式前，先明确 Alpha Cutout 阴影、排序和混合策略。
 
 ## 7. 当前技术债与约束
@@ -212,7 +213,7 @@ CPU 负责场景代理、可见项列表、矩阵和资源绑定准备；GPU 负
 - RenderPass 之间仍通过共享 `RenderPassContext` 和 Pass 之间的直接引用传递视图及纹理资源，资源读写依赖尚未显式声明，后续可引入 Render Graph。
 - 当前裁剪只使用世界空间包围球，非均匀缩放取最大轴形成保守半径；细长物体可能产生误保留，但不会错误剔除。遮挡裁剪与距离裁剪尚未实现。
 - 主视图、反射视图和阴影视图每帧分别遍历场景并重建 `RenderItem` 列表；对象规模扩大后需要评估重复 CPU 遍历、容器填充和包围体变换成本。
-- 不透明列表已按稳定资源 ID 排序并支持共享 Mesh/Material；VAO 已由 Pass 内状态缓存管理，Shader 与 Texture 仍直接绑定，需在更大场景基线下再评估。
+- 不透明列表已按稳定资源 ID 排序并支持共享 Mesh/Material；256 实例基线已证明 Instancing 的提交冗余，VAO 由状态缓存管理，Texture cache 留待 Instancing 后重新评估。
 - 透明排序使用各自主视图/反射视图下的物体包围球中心观察空间深度；相交网格、网格内部三角形顺序、Alpha Cutout 阴影与 OIT 仍未处理。
 - Resize 会在渲染线程立即重建 Forward/Reflection 颜色与深度附件；持续拖动窗口可能产生重复 GPU 分配，后续可结合 Render Graph 资源池或 resize debounce 优化。
 - Forward PBR 最多消费 16 盏灯；当前仍只有一张 2D shadow map，Point Light 阴影与多阴影灯尚未实现。

@@ -59,3 +59,16 @@ Recorder 只在 CPU 侧统计 Renderer 已接入的提交入口，不等同于 G
 当前日志在首帧或统计变化时输出，不逐帧刷屏。未来若引入 ImGui 性能面板，可以直接消费同一份 `PassSubmissionStats`，但需要先将只读快照接口从 Recorder 中公开。
 
 各 Pass 的异步 GPU Timer Query、EMA 和只读快照已在后续阶段实现，生命周期与限制见 `docs/gpu-pass-profiling.md`。
+
+## 多实例基线（2026-08-14）
+
+新增默认关闭的 `--instance-grid N` 场景后，已完成 `1x1`、`8x8`、`16x16`
+三档独立运行诊断。所有不透明实例共享同一 Mesh/Material；网格扩大到 256 个实例时，
+Renderer 资源数仍保持 2 Mesh / 4 Material，主视图可见 259 个 Primitive 且无误裁剪。
+
+16x16 场景的 RenderDoc 捕获为
+`captures/maix_instances_16_frame146.rdc`，大小约 95.9 MiB。CLI 缩略图回放成功，
+确认主视图网格和反射结果有效。Forward 数据为 258 Draw、Material `256/1`、
+Mesh `258/3`、Texture `1030/9`，因此下一步优先实现共享资源不透明批次的
+Instancing；Texture cache 在 Instancing 后重新评估。完整数据与 CPU/GPU 数据流见
+`docs/instance-benchmark.md`。

@@ -44,7 +44,9 @@ set(SOURCES
 
     # Core
     src/Core/Application.cpp
+    src/Core/ApplicationOptions.cpp
     src/Core/Camera.cpp
+    src/Core/InstanceGrid.cpp
 
     # Editor
     src/Editor/RendererStatisticsPanel.cpp
@@ -271,4 +273,20 @@ if(BUILD_TESTING)
     )
 
     add_test(NAME PostProcessSettingsTests COMMAND PostProcessSettingsTests)
+
+    add_executable(
+        ApplicationBenchmarkTests
+        tests/Core/ApplicationBenchmarkTests.cpp
+        src/Core/ApplicationOptions.cpp
+        src/Core/InstanceGrid.cpp
+    )
+
+    target_include_directories(
+        ApplicationBenchmarkTests
+        PRIVATE
+        ${SRC_DIR}
+        ${THIRD_PARTY_DIR}/cyCodeBase
+    )
+
+    add_test(NAME ApplicationBenchmarkTests COMMAND ApplicationBenchmarkTests)
 endif()

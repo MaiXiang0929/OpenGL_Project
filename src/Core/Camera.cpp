@@ -68,6 +68,15 @@ void Camera::SetDistance(
 	m_Distance = distance;
 }
 
+void Camera::SetClipPlanes(float nearPlane, float farPlane)
+{
+	if (nearPlane <= 0.0f || farPlane <= nearPlane)
+		return;
+
+	m_NearPlane = nearPlane;
+	m_FarPlane = farPlane;
+}
+
 
 cy::Matrix4f Camera::GetViewMatrix() const
 {

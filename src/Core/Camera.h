@@ -32,6 +32,7 @@ public:
 	void ToggleProjectionMode();
 	void SetTarget(const cy::Vec3f& target);
 	void SetDistance(float distance);
+	void SetClipPlanes(float nearPlane, float farPlane);
 
 
 	// Output
