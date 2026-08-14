@@ -56,8 +56,7 @@ public:
         MaterialHandle material,
         const cy::Matrix4f& localToWorld,
         PrimitiveBounds bounds = {},
-        bool castsShadow = true,
-        bool translucent = false);
+        bool castsShadow = true);
 
     /// @brief 便利接口：创建独立 Mesh/Material 后提交一个 Primitive。
     PrimitiveId AddPrimitive(
@@ -65,8 +64,7 @@ public:
         Material material,
         const cy::Matrix4f& localToWorld,
         PrimitiveBounds bounds = {},
-        bool castsShadow = true,
-        bool translucent = false);
+        bool castsShadow = true);
     bool UpdatePrimitiveTransform(
         PrimitiveId id,
         const cy::Matrix4f& localToWorld);

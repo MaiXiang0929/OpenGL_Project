@@ -39,6 +39,25 @@ std::shared_ptr<Texture2D> Texture2D::Load(
         return nullptr;
     }
 
+    return CreateRGBA8(width, height, image, colorSpace);
+}
+
+std::shared_ptr<Texture2D> Texture2D::CreateRGBA8(
+    unsigned int width,
+    unsigned int height,
+    const std::vector<unsigned char>& pixels,
+    TextureColorSpace colorSpace)
+{
+    const std::size_t expectedSize =
+        static_cast<std::size_t>(width) * height * 4;
+    if (width == 0 || height == 0 || pixels.size() != expectedSize)
+    {
+        std::cerr
+            << "[Texture2D Error] Invalid RGBA8 texture extent or data size."
+            << std::endl;
+        return nullptr;
+    }
+
     GLuint textureID = 0;
     glGenTextures(1, &textureID);
     glBindTexture(GL_TEXTURE_2D, textureID);
@@ -55,7 +74,7 @@ std::shared_ptr<Texture2D> Texture2D::Load(
         0,
         GL_RGBA,
         GL_UNSIGNED_BYTE,
-        image.data());
+        pixels.data());
     glGenerateMipmap(GL_TEXTURE_2D);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);

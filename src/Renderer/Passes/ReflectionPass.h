@@ -5,13 +5,17 @@
 #include "Renderer/Pipeline/RenderPass.h"
 
 class ForwardPass;
+class TranslucencyPass;
 
 /// @brief 反射 Pass：用镜像视图重绘天空盒和 teapot 到独立纹理。
 class ReflectionPass final : public RenderPass
 {
 public:
-    explicit ReflectionPass(ForwardPass& forwardPass)
+    ReflectionPass(
+        ForwardPass& forwardPass,
+        TranslucencyPass& translucencyPass)
         : m_ForwardPass(forwardPass)
+        , m_TranslucencyPass(translucencyPass)
     {
     }
 
@@ -29,5 +33,6 @@ public:
 
 private:
     ForwardPass& m_ForwardPass;
+    TranslucencyPass& m_TranslucencyPass;
     Framebuffer m_Framebuffer;
 };

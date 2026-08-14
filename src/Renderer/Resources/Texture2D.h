@@ -10,6 +10,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 #include <glad/glad.h>
 
@@ -31,6 +32,11 @@ public:
 
     static std::shared_ptr<Texture2D> Load(
         const std::string& filePath,
+        TextureColorSpace colorSpace = TextureColorSpace::Linear);
+    static std::shared_ptr<Texture2D> CreateRGBA8(
+        unsigned int width,
+        unsigned int height,
+        const std::vector<unsigned char>& pixels,
         TextureColorSpace colorSpace = TextureColorSpace::Linear);
 
     void Bind(unsigned int textureUnit) const;

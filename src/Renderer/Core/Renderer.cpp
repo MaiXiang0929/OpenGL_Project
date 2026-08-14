@@ -102,8 +102,7 @@ PrimitiveId Renderer::AddPrimitive(
     MaterialHandle material,
     const cy::Matrix4f& localToWorld,
     PrimitiveBounds bounds,
-    bool castsShadow,
-    bool translucent)
+    bool castsShadow)
 {
     if (!mesh.IsValid() || !material.IsValid() ||
         mesh.id >= m_MeshResources.size() ||
@@ -123,7 +122,7 @@ PrimitiveId Renderer::AddPrimitive(
     proxy.localToWorld = localToWorld;
     proxy.localBounds = bounds;
     proxy.castsShadow = castsShadow;
-    proxy.translucent = translucent;
+    proxy.blendMode = proxy.material->GetBlendMode();
 
     return m_RenderScene.AddPrimitive(proxy);
 }
@@ -133,8 +132,7 @@ PrimitiveId Renderer::AddPrimitive(
     Material material,
     const cy::Matrix4f& localToWorld,
     PrimitiveBounds bounds,
-    bool castsShadow,
-    bool translucent)
+    bool castsShadow)
 {
     const MeshHandle mesh = CreateMesh(vertices);
     const MaterialHandle materialHandle = CreateMaterial(std::move(material));
@@ -143,8 +141,7 @@ PrimitiveId Renderer::AddPrimitive(
         materialHandle,
         localToWorld,
         bounds,
-        castsShadow,
-        translucent);
+        castsShadow);
 }
 
 bool Renderer::UpdatePrimitiveTransform(

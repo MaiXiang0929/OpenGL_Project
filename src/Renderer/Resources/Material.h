@@ -13,6 +13,7 @@
 #include "cyVector.h"
 
 #include "Renderer/Resources/Texture2D.h"
+#include "Renderer/Resources/MaterialTypes.h"
 
 class Shader;
 
@@ -36,6 +37,9 @@ class Material
 public:
     void Bind(Shader& shader, unsigned int firstTextureUnit = 0) const;
 
+    void SetBlendMode(BlendMode blendMode) { m_BlendMode = blendMode; }
+    BlendMode GetBlendMode() const { return m_BlendMode; }
+
     MaterialProperties& GetProperties() { return m_Properties; }
     const MaterialProperties& GetProperties() const { return m_Properties; }
 
@@ -46,6 +50,7 @@ public:
     void BindDisplacement(Shader& shader, unsigned int textureUnit) const;
 
 private:
+    BlendMode m_BlendMode = BlendMode::Opaque;
     MaterialProperties m_Properties;
     std::shared_ptr<Texture2D> m_AlbedoMap;
     std::shared_ptr<Texture2D> m_SpecularMap;

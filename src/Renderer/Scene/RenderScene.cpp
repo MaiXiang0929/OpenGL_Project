@@ -199,7 +199,7 @@ void RenderScene::BuildRenderView(RenderView& view) const
             0.0f,
             proxy.castsShadow
         };
-        if (proxy.translucent)
+        if (proxy.blendMode == BlendMode::AlphaBlend)
         {
             const cy::Vec4f centerView = view.view * cy::Vec4f(
                 worldBounds.center.x,

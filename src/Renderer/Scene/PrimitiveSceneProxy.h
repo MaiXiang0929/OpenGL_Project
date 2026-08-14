@@ -7,6 +7,7 @@
 #include "cyMatrix.h"
 #include "cyVector.h"
 #include "Renderer/Resources/RenderResourceHandle.h"
+#include "Renderer/Resources/MaterialTypes.h"
 
 class Material;
 class Mesh;
@@ -37,5 +38,5 @@ struct PrimitiveSceneProxy
     PrimitiveBounds localBounds;
     bool visible = true;
     bool castsShadow = true;
-    bool translucent = false;
+    BlendMode blendMode = BlendMode::Opaque;
 };

@@ -22,6 +22,7 @@
 #include <filesystem>
 #include <iostream>
 #include <utility>
+#include <vector>
 
 /// @brief 构造函数
 Application::Application(std::string normalMapPath, std::string displacementMapPath)
@@ -414,6 +415,13 @@ void Application::CreateTranslucencyTestScene()
     if (!planeMesh.IsValid())
         return;
 
+    const std::vector<unsigned char> alphaChecker = {
+        255, 255, 255, 255,  255, 255, 255, 64,
+        255, 255, 255, 64,   255, 255, 255, 255
+    };
+    const std::shared_ptr<Texture2D> alphaTexture = Texture2D::CreateRGBA8(
+        2, 2, alphaChecker, TextureColorSpace::SRGB);
+
     for (const TestLayer& layer : layers)
     {
         Material material;
@@ -422,6 +430,8 @@ void Application::CreateTranslucencyTestScene()
         properties.roughness = 0.65f;
         properties.environmentReflectivity = 0.05f;
         properties.opacity = layer.opacity;
+        material.SetBlendMode(BlendMode::AlphaBlend);
+        material.SetAlbedoMap(alphaTexture);
         const MaterialHandle materialHandle =
             m_Renderer->CreateMaterial(std::move(material));
         if (!materialHandle.IsValid())
@@ -434,8 +444,7 @@ void Application::CreateTranslucencyTestScene()
             materialHandle,
             cy::Matrix4f::Translation(layer.position),
             bounds,
-            false,
-            true);
+            false);
     }
 }
 

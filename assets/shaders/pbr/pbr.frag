@@ -155,9 +155,11 @@ void main()
         return;
     }
 
-    vec3 albedo = pow(max(material.baseColor, vec3(0.0)), vec3(2.2));
+    vec4 albedoSample = vec4(1.0);
     if (material.hasAlbedoMap)
-        albedo *= texture(material.albedoMap, fragTexCoord).rgb;
+        albedoSample = texture(material.albedoMap, fragTexCoord);
+    vec3 albedo = pow(max(material.baseColor, vec3(0.0)), vec3(2.2)) *
+        albedoSample.rgb;
 
     vec3 specularTint = clamp(material.specularColor, vec3(0.0), vec3(1.0));
     if (material.hasSpecularMap)
@@ -233,5 +235,5 @@ void main()
 
     color = vec4(
         ambient + directLighting + environmentSpecular,
-        clamp(material.opacity, 0.0, 1.0));
+        clamp(material.opacity * albedoSample.a, 0.0, 1.0));
 }

@@ -2,6 +2,7 @@
 #include "ReflectionPass.h"
 
 #include "ForwardPass.h"
+#include "TranslucencyPass.h"
 
 bool ReflectionPass::Init()
 {
@@ -29,6 +30,8 @@ void ReflectionPass::Execute(RenderPassContext& context)
 
     m_ForwardPass.RenderSkybox(context, context.frame.reflectionView);
     m_ForwardPass.RenderSurface(context, context.reflectionView);
+    m_TranslucencyPass.RenderToBoundTarget(
+        context, context.reflectionView);
 
     m_Framebuffer.Unbind();
     m_Framebuffer.GenerateMipmaps();

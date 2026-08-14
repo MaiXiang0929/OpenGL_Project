@@ -7,7 +7,14 @@
 void TranslucencyPass::Execute(RenderPassContext& context)
 {
     m_ForwardPass.BindColorTarget();
+    RenderToBoundTarget(context, context.mainView);
+    m_ForwardPass.UnbindColorTarget();
+}
 
+void TranslucencyPass::RenderToBoundTarget(
+    RenderPassContext& context,
+    RenderView& view)
+{
     const GLboolean depthTestEnabled = glIsEnabled(GL_DEPTH_TEST);
     const GLboolean blendEnabled = glIsEnabled(GL_BLEND);
     GLboolean depthWriteEnabled = GL_TRUE;
@@ -26,14 +33,14 @@ void TranslucencyPass::Execute(RenderPassContext& context)
     glGetIntegerv(GL_BLEND_EQUATION_RGB, &blendEquationRgb);
     glGetIntegerv(GL_BLEND_EQUATION_ALPHA, &blendEquationAlpha);
 
-    // 透明表面仍需被不透明深度遮挡，但不能写深度，否则会错误遮挡后续透明层。
+    // Preserve opaque depth for testing but do not let translucent layers occlude each other.
     glEnable(GL_DEPTH_TEST);
     glDepthMask(GL_FALSE);
     glEnable(GL_BLEND);
     glBlendEquation(GL_FUNC_ADD);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    m_ForwardPass.RenderTranslucentSurface(context, context.mainView);
+    m_ForwardPass.RenderTranslucentSurface(context, view);
 
     if (!blendEnabled)
         glDisable(GL_BLEND);
@@ -46,7 +53,4 @@ void TranslucencyPass::Execute(RenderPassContext& context)
     if (!depthTestEnabled)
         glDisable(GL_DEPTH_TEST);
     glDepthMask(depthWriteEnabled);
-
-    // 颜色目标至此已包含不透明与透明结果，随后才能生成供 Present 使用的完整 mip 链。
-    m_ForwardPass.UnbindColorTarget();
 }

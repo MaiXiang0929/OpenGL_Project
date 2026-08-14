@@ -22,7 +22,7 @@ PrimitiveSceneProxy MakePrimitive(
     RenderResourceId materialId,
     RenderResourceId meshId,
     const cy::Vec3f& center = cy::Vec3f(0.0f, 0.0f, 0.0f),
-    bool translucent = false)
+    BlendMode blendMode = BlendMode::Opaque)
 {
     PrimitiveSceneProxy proxy;
     proxy.mesh = reinterpret_cast<Mesh*>(static_cast<std::uintptr_t>(1));
@@ -33,7 +33,7 @@ PrimitiveSceneProxy MakePrimitive(
     proxy.meshId = meshId;
     proxy.localBounds.center = center;
     proxy.localBounds.radius = 0.25f;
-    proxy.translucent = translucent;
+    proxy.blendMode = blendMode;
     return proxy;
 }
 
@@ -44,7 +44,8 @@ RenderScene MakeScene()
     scene.AddPrimitive(MakePrimitive(0, 2, 3));
     scene.AddPrimitive(MakePrimitive(0, 1, 5));
     scene.AddPrimitive(MakePrimitive(0, 1, 2));
-    scene.AddPrimitive(MakePrimitive(0, 0, 0, cy::Vec3f(), true));
+    scene.AddPrimitive(MakePrimitive(
+        0, 0, 0, cy::Vec3f(), BlendMode::AlphaBlend));
     scene.AddPrimitive(MakePrimitive(0, 0, 0, cy::Vec3f(5.0f, 0.0f, 0.0f)));
     return scene;
 }
@@ -134,11 +135,11 @@ void TestTranslucentBackToFrontStableSorting()
 {
     RenderScene scene;
     const PrimitiveId nearId = scene.AddPrimitive(MakePrimitive(
-        0, 0, 0, cy::Vec3f(0.0f, 0.0f, -2.0f), true));
+        0, 0, 0, cy::Vec3f(0.0f, 0.0f, -2.0f), BlendMode::AlphaBlend));
     const PrimitiveId farFirstId = scene.AddPrimitive(MakePrimitive(
-        0, 0, 0, cy::Vec3f(0.0f, 0.0f, -8.0f), true));
+        0, 0, 0, cy::Vec3f(0.0f, 0.0f, -8.0f), BlendMode::AlphaBlend));
     const PrimitiveId farSecondId = scene.AddPrimitive(MakePrimitive(
-        0, 0, 0, cy::Vec3f(1.0f, 0.0f, -8.0f), true));
+        0, 0, 0, cy::Vec3f(1.0f, 0.0f, -8.0f), BlendMode::AlphaBlend));
 
     RenderView view;
     view.type = RenderViewType::Main;
@@ -158,6 +159,33 @@ void TestTranslucentBackToFrontStableSorting()
         view.translucentItems[0].sortDepth == -8.0f &&
         view.translucentItems[2].sortDepth == -2.0f,
         "Translucent sort depth should use the world bounds center in view space.");
+}
+
+void TestReflectionTranslucentSortingUsesReflectionView()
+{
+    RenderScene scene;
+    const PrimitiveId nearId = scene.AddPrimitive(MakePrimitive(
+        0, 0, 0, cy::Vec3f(0.0f, 0.0f, -2.0f), BlendMode::AlphaBlend));
+    const PrimitiveId farId = scene.AddPrimitive(MakePrimitive(
+        0, 0, 0, cy::Vec3f(0.0f, 0.0f, -8.0f), BlendMode::AlphaBlend));
+
+    RenderView view;
+    view.type = RenderViewType::Reflection;
+    view.view = cy::Matrix4f::Scale(1.0f, 1.0f, -1.0f);
+    view.frustumCullingEnabled = false;
+    scene.BuildRenderView(view);
+
+    Require(view.opaqueItems.empty(),
+        "Alpha-blended materials must not enter the reflection opaque queue.");
+    Require(
+        view.translucentItems.size() == 2 &&
+        view.translucentItems[0].primitiveId == nearId &&
+        view.translucentItems[1].primitiveId == farId,
+        "Reflection transparency must sort with the reflection view matrix.");
+    Require(
+        view.translucentItems[0].sortDepth == 2.0f &&
+        view.translucentItems[1].sortDepth == 8.0f,
+        "Reflection sort depth must be resolved in reflected view space.");
 }
 
 void TestSharedResourceIdentitySurvivesViewBuild()
@@ -194,6 +222,7 @@ int main()
     TestReflectionUsesSurfaceSortPolicy();
     TestShadowViewSorting();
     TestTranslucentBackToFrontStableSorting();
+    TestReflectionTranslucentSortingUsesReflectionView();
     TestSharedResourceIdentitySurvivesViewBuild();
     std::cout << "RenderScene tests passed." << std::endl;
     return EXIT_SUCCESS;

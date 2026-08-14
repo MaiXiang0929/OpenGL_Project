@@ -20,6 +20,11 @@ public:
     }
     void Execute(RenderPassContext& context) override;
 
+    /// Draws one view's translucent queue into the framebuffer currently bound.
+    void RenderToBoundTarget(
+        RenderPassContext& context,
+        RenderView& view);
+
 private:
     ForwardPass& m_ForwardPass;
 };

@@ -35,7 +35,7 @@ const char* GetPassDebugName(RenderPassType type)
 RenderPipeline::RenderPipeline()
     : m_TranslucencyPass(m_ForwardPass)
     , m_EditorPrimitivePass(m_ForwardPass)
-    , m_ReflectionPass(m_ForwardPass)
+    , m_ReflectionPass(m_ForwardPass, m_TranslucencyPass)
     , m_PresentPass(m_ForwardPass)
 {
     // 顺序由 GPU 资源依赖决定：阴影和反射必须先于主颜色与 Present。
