@@ -92,7 +92,7 @@ CPU 负责场景代理、可见项列表、矩阵和资源绑定准备；GPU 负
 
 - [x] Renderer 目录按 Core / Pipeline / Passes / Resources / Scene / View 拆分
 - [x] Shader 目录按渲染用途拆分
-- [x] `RenderPipeline` 按固定顺序执行 Shadow、Reflection、Forward、Translucency、EditorPrimitive、Bloom、PostProcess、Present
+- [x] `RenderPipeline` 按固定顺序执行 Shadow、Reflection、Forward、Translucency、Bloom、PostProcess、EditorPrimitive、Present
 - [x] `RenderScene`、`PrimitiveSceneProxy`、`LightSceneProxy` 已建立
 - [x] `RenderView`、`RenderItem` 已建立，支持 opaque/translucent 分类
 - [x] Renderer 持有 Primitive 的 Mesh 与 Material，Scene Proxy 使用非 owning 指针
@@ -108,7 +108,7 @@ CPU 负责场景代理、可见项列表、矩阵和资源绑定准备；GPU 负
 - [x] 标准 PBR 与曲面细分/位移路径可切换
 - [x] Directional/Spot 阴影基础流程与 PCF
 - [x] Cubemap、反射地面、离屏 Framebuffer、Present 流程
-- [x] Light Gizmo 已迁移为独立 `EditorPrimitivePass`，在 Present 前写入 Forward 颜色目标
+- [x] Light Gizmo 由 `EditorPrimitivePass` 写入独立全分辨率 Overlay Buffer，使用预乘 Alpha 并在 Present 合成，不受 Bloom、曝光或 Tone Mapping 影响
 - [x] 独立 `TranslucencyPass` 已支持主视图与反射视图透明物体从后向前稳定排序、纹理 Alpha、显式 Blend Mode、Alpha Blend 和深度只读
 - [x] PBR 使用 std140 UBO 消费最多 16 盏 Directional/Point/Spot 灯光，并为单一 2D shadow map 记录对应灯光索引
 - [x] Renderer 已提供强类型 Mesh/Material Handle 与共享资源提交接口；透明测试场景的三张平面共享一份 Mesh
