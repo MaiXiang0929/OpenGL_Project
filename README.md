@@ -1,163 +1,286 @@
-# OpenGL Project
+# MaiX Renderer
 
-基于 OpenGL 4.0 Core Profile 的交互式计算机图形学练习项目。
+MaiX Renderer 是一个面向技术美术、Shader TA 和渲染工程学习的轻量级实时光栅化框架。项目使用 C++17、OpenGL 4.0 Core Profile、GLSL 和 Dear ImGui，目标是把一条可解释、可调试、可扩展的现代实时渲染链路落到可运行代码中。
 
-项目使用 C++17 实现，当前包含 OBJ 模型加载、Blinn-Phong 光照、材质纹理、天空盒、环境反射、离屏渲染、平面反射和聚光灯阴影等功能。
+它不是只展示一个模型的 Demo，而是一个围绕以下问题组织的渲染实验场：
 
-## 功能
+- GPU 光栅化、深度测试、纹理采样和资源绑定如何在 Pass 之间流动；
+- Cook-Torrance PBR、Toon/NPR、阴影、HDR 后处理和透明混合如何共存；
+- Renderer 如何拥有 GPU 资源，Scene Proxy 如何向管线提交可见对象；
+- 技术美术如何在运行时修改材质、灯光、Transform，并观察结果和性能统计。
 
-- 加载 OBJ/MTL 模型
-- 自动生成缺失的顶点法线
-- 根据模型包围盒自动调整相机距离和地面尺寸
-- 加载漫反射贴图与高光贴图
-- Blinn-Phong 光照
-- Cubemap 天空盒与环境反射
-- 基于 Framebuffer Object 的离屏渲染
-- 基于反射相机的平面反射
-- 2048 × 2048 聚光灯阴影贴图
-- 3 × 3 PCF 阴影过滤
-- 透视投影与正交投影切换
-- 着色器运行时重新加载
-- 光源位置调试图标
+## 展示重点
 
-## 渲染流程
+当前项目可以支持一段约 60 秒的技术展示：
 
-每帧主要执行以下渲染阶段：
+| 时间段 | 展示内容 |
+| --- | --- |
+| 0-10s | Renderer 分层、RenderScene、RenderView 和多 Pass 管线 |
+| 10-25s | 金属、塑料、陶瓷、粗糙金属的 PBR Material Lab |
+| 25-40s | Toon 分段光照、Rim Light、Inverted Hull Outline、Face Shadow |
+| 40-50s | RGBA16F HDR、Bloom、SSAO、手动曝光、ACES Tone Mapping |
+| 50-60s | Scene Window、Inspector、Material Editor、灯光和 Transform 实时编辑 |
 
-1. 从光源视角渲染模型深度，生成阴影贴图。
-2. 使用镜像相机将天空盒和模型渲染到反射纹理。
-3. 将天空盒、反射地面、模型和光源图标渲染到离屏颜色缓冲。
-4. 将离屏颜色纹理绘制到窗口中的显示平面。
+视觉结果以实际运行和用户验收为准；自动测试只负责验证程序、资源和数学逻辑没有明显错误。
 
-CPU 侧负责模型加载、资源管理、输入处理和矩阵计算；GPU 侧负责顶点变换、光照、环境反射、阴影采样和最终像素输出。
+## 渲染架构
+
+```text
+Application
+  ├─ Window / Input / Camera
+  ├─ Editable scene state
+  └─ RenderFrameData
+       │
+       ▼
+Renderer
+  ├─ RenderScene
+  │   ├─ PrimitiveSceneProxy
+  │   └─ LightSceneProxy
+  ├─ GPU resources
+  │   ├─ Mesh / Material / Shader / Texture
+  │   ├─ Framebuffer / ShadowMap / Cubemap
+  │   └─ strong typed MeshHandle / MaterialHandle
+  └─ RenderPipeline
+      ├─ ShadowPass
+      ├─ ReflectionPass
+      ├─ ForwardPass
+      ├─ OutlinePass
+      ├─ TranslucencyPass
+      ├─ SSAOPass
+      ├─ BloomPass
+      ├─ PostProcessPass
+      ├─ EditorPrimitivePass
+      └─ PresentPass
+           │
+           ▼
+        OpenGL 4.0 GPU
+```
+
+每帧的数据流如下：
+
+1. `Application` 更新相机、模型 Transform 和灯光，并提交 `RenderFrameData`。
+2. `RenderScene::BuildRenderView()` 将 Scene Proxy 转换为主视图、反射视图和阴影视图的 `RenderItem` 列表。
+3. CPU 执行包围球视锥裁剪、透明排序、不透明资源排序和批次准备。
+4. GPU 依次执行阴影、反射、Forward/NPR、透明、屏幕空间后处理、编辑器叠加层和最终显示。
+
+CPU 负责场景代理、可见性、矩阵、资源句柄和材质参数；GPU 负责顶点变换、三角形光栅化、深度/混合状态、纹理采样、BRDF 光照和像素输出。
+
+## 已实现能力
+
+### PBR 与材质
+
+- Cook-Torrance metallic/roughness BRDF；
+- Base Color、Normal、ORM、Displacement 固定纹理槽；
+- ORM 通道约定：R=AO、G=Roughness、B=Metallic；
+- sRGB/Linear 色彩空间契约和材质参数约束；
+- 标准、Instancing、Tessellation/Displacement 路径共享 PBR 光照；
+- `--material-lab` 提供 Copper、Plastic、Ceramic、Rough Metal 四种参考材质。
+
+### NPR 与透明
+
+- Toon 分段漫反射、阴影色和 Rim Light；
+- Inverted Hull Outline，写入 Forward HDR Scene Color；
+- Face Shadow：线性 FaceLightmap、局部 Face Forward/Right、自动左右镜像和独立 Key Light；
+- 独立 TranslucencyPass：后向前排序、纹理 Alpha、Alpha Blend、深度只读；
+- 当前透明路径支持 Opaque 和 Alpha Blend，Masked/Additive 尚未接入。
+
+### 阴影、HDR 与后处理
+
+- Directional/Spot 基础阴影和 PCF；当前 Forward 最多消费 16 盏灯，使用一张 2D Shadow Map；
+- Cubemap、半分辨率反射、离屏 Framebuffer 和 Present Pass；
+- RGBA16F HDR Scene Color；
+- 半分辨率 Bloom 提取与双向模糊；
+- 深度重建观察空间位置/法线的 SSAO；
+- 手动曝光、ACES Tone Mapping 和 sRGB 输出编码。
+
+### 场景、资源与编辑器
+
+- `RenderScene`、Primitive/Light Scene Proxy 和主/反射/阴影视图裁剪；
+- Mesh/Material Handle、Renderer-owned GPU 资源和资源提交边界；
+- 不透明物体按 Shader/Material/Mesh 排序并支持共享资源 Instancing；
+- FBX 静态模型导入：多 Mesh、多材质分段、索引绘制、外部/嵌入纹理和异步 CPU 解析；
+- ImGui Renderer Statistics、Material Editor、Scene Window、Inspector；
+- 视口 Orbit/Pan/Dolly、模型/灯光拾取、ImGuizmo Transform 和选中对象聚焦；
+- GPU Debug Group、每 Pass Draw/资源统计和三帧 GPU Timer Query。
+
+## 目标角色 Face Shadow Demo
+
+外部角色资产不会被复制进仓库。当前验证过的目标资产位于用户本地目录，运行前需保留原目录中的署名说明。
+
+从可执行文件目录运行：
+
+```powershell
+.\OpenGL_Project.exe --face-shadow-demo `
+  "D:\Desktop\Unity URP shader\重逢-荧\Lumine FBX.fbx" `
+  "D:\Desktop\Unity URP shader\重逢-荧\textures\Avatar_Girl_Tex_FaceLightmap.png" `
+  "Lumine Face"
+```
+
+该启动路径会：
+
+- 导入 `Lumine FBX.fbx`；
+- 按精确名称匹配 `Lumine Face`；
+- 将 `Avatar_Girl_Tex_FaceLightmap.png` 作为 Linear RGBA8 Face Shadow 纹理绑定；
+- 自动启用 Toon 和 Face Shadow；
+- 过滤远处武器辅助分段对相机、地面、主灯和阴影视锥的包围体污染，但不删除这些 Draw。
+
+`Avatar_Tex_Face_Shadow.png` 是近似二值遮罩，不符合当前按灯光角度比较的连续阈值契约，因此不作为本 Demo 的 Face Shadow 输入。
 
 ## 环境要求
 
-- Windows 10/11 x64
-- Visual Studio 2022，包含“使用 C++ 的桌面开发”组件
-- CMake 3.15 或更高版本
-- 支持 OpenGL 4.0 Core Profile 的显卡及驱动
+- Windows 10/11 x64；
+- Visual Studio 2022 或兼容的 MSVC x64 工具链；
+- CMake 3.23 或更高版本；
+- 支持 OpenGL 4.0 Core Profile 的显卡和驱动。
 
-项目已在 `ThirdParty/` 中包含 GLAD、GLFW、cyCodeBase 和 LodePNG，无需额外下载这些依赖。
+主要第三方依赖已经放在 `ThirdParty/`：GLFW、GLAD、ufbx、cyCodeBase、LodePNG、Dear ImGui 和 ImGuizmo。
 
 ## 构建
 
-在项目根目录执行：
+请在 Visual Studio Developer PowerShell (x64) 中，从仓库根目录执行：
 
 ```powershell
 cmake --preset windows-ninja-debug
 cmake --build --preset windows-ninja-debug
 ```
 
-These commands must be run from a Visual Studio Developer PowerShell (x64),
-so that the MSVC compiler and Ninja are available on `PATH`.
-
-构建完成后，可执行文件位于：
+输出程序位于：
 
 ```text
 out/build/windows-ninja-debug/OpenGL_Project.exe
 ```
 
-CMake 会在构建后自动将 `assets/` 复制到可执行文件目录。
+CMake 会在构建后清理并复制最新的 `assets/` 到可执行文件目录。
 
-也可以直接使用 Visual Studio 打开项目根目录，通过内置 CMake 支持进行配置和构建。
+## 运行入口
 
-## 运行
-
-不传入参数时，程序会加载内置茶壶模型：
+默认场景：
 
 ```powershell
 .\out\build\windows-ninja-debug\OpenGL_Project.exe
 ```
 
-也可以通过第一个命令行参数加载其他 OBJ 模型：
+PBR Material Lab：
 
 ```powershell
-.\out\build\windows-ninja-debug\OpenGL_Project.exe path\to\model.obj
+.\out\build\windows-ninja-debug\OpenGL_Project.exe --material-lab
 ```
 
-模型引用的 MTL 文件和 PNG 纹理应位于有效的相对路径中。当前渲染器会使用 MTL 中首个有效的漫反射贴图和高光贴图。
+共享资源 Instancing 基准（N 为 1-32）：
 
-## 操作
+```powershell
+.\out\build\windows-ninja-debug\OpenGL_Project.exe --instance-grid 16
+```
 
-| 输入 | 功能 |
+透明测试场景：
+
+```powershell
+.\out\build\windows-ninja-debug\OpenGL_Project.exe --translucency-test
+```
+
+查看全部参数：
+
+```powershell
+.\out\build\windows-ninja-debug\OpenGL_Project.exe --help
+```
+
+FBX 也可以在运行中的 `File > Import FBX...` 通过 Asset Import 面板导入。该流程会异步解析 CPU 数据，并在 GPU 资源创建成功后事务式替换当前模型。
+
+## 编辑器操作
+
+| 操作 | 用途 |
 | --- | --- |
-| 鼠标左键拖动 | 旋转模型观察相机 |
-| 鼠标右键拖动 | 调整模型观察距离 |
-| `Ctrl` + 鼠标左键拖动 | 绕模型旋转光源 |
-| `Alt` + 鼠标左键拖动 | 旋转最终显示平面的相机 |
-| `Alt` + 鼠标右键拖动 | 调整最终显示平面的观察距离 |
-| `P` | 切换透视投影与正交投影 |
-| `S` | 开启或关闭阴影 |
-| `L` | 显示或隐藏光源调试图标 |
-| `F6` | 重新加载 GLSL 着色器 |
+| 鼠标左键点选 | 选择模型或可见灯光 Gizmo |
+| `Alt` + 左键拖动 | Orbit 相机 |
+| `Alt` + 中键拖动 | Pan 相机 |
+| `Alt` + 右键拖动或滚轮 | Dolly 相机 |
+| `Ctrl` + 左键拖动 | 旋转主 Spot Light |
+| `F` | 聚焦当前选中对象 |
+| `W` / `E` / `R` | ImGuizmo 移动 / 旋转 / 缩放 |
+| `Q` | 切换世界/局部 Transform 空间 |
+| `F6` | 重新加载 GLSL Shader |
 | `Esc` | 退出程序 |
 
-按住 `Alt` 时，显示平面相机操作具有最高优先级。
+Material Editor 修改会通过 `Renderer::UpdateMaterial()` 和 `Renderer::UpdateMaterialTexture()` 回到 Renderer-owned 资源，并在下一帧被 Forward、Reflection、Outline 和 Translucency 消费。
+
+## 测试与验证
+
+构建完成后运行：
+
+```powershell
+ctest --test-dir out/build/windows-ninja-debug --output-on-failure
+```
+
+当前包含 13 项测试，覆盖：
+
+- Frustum 和 RenderScene 可见性；
+- Light Render Data、Render Batch 和 Render Pass Contract；
+- Render Target 尺寸、后处理设置和材质纹理类型；
+- Application 参数、相机和编辑器交互；
+- Image Loader 与 FBX Model Importer。
+
+运行时还应检查控制台中的 OpenGL 版本、Shader 初始化、Pass Draw 统计和 GPU Timer Query。视觉效果（尤其是 Face Shadow 的轴向、镜像和阈值方向）仍需人工验收。
 
 ## 项目结构
 
 ```text
-OpenGL_Project/
-├── assets/
-│   ├── models/              # OBJ、MTL、PNG 和 Cubemap 资源
-│   └── shaders/
-│       ├── pbr/             # Cook-Torrance 与 Tessellation Shader
-│       ├── shadow/          # 阴影深度 Shader
-│       ├── environment/     # Skybox Shader
-│       ├── reflection/      # 平面反射地面 Shader
-│       ├── present/         # 最终显示 Shader
-│       └── debug/           # Gizmo 与调试 Shader
-├── docs/
-│   └── assignments/         # 课程作业笔记
-├── src/
-│   ├── Core/                # 应用生命周期、窗口输入和相机
-│   ├── Editor/              # 光源调试图标
-│   ├── Renderer/
-│   │   ├── Core/            # Renderer 门面与资源所有权
-│   │   ├── Pipeline/        # Pipeline、Pass 契约与渲染设置
-│   │   ├── Passes/          # Shadow、Reflection、Forward、Present
-│   │   ├── Scene/           # RenderScene 与渲染侧 Scene Proxy
-│   │   ├── View/            # RenderView 与每视图绘制列表
-│   │   └── Resources/       # Mesh、Material、Shader、Texture 与 FBO
-│   └── main.cpp             # 程序入口
-├── ThirdParty/              # 第三方依赖
-├── CMakeLists.txt
-└── README.md
+src/
+├─ Assets/                 FBX、图片和 CPU 导入流程
+├─ Core/                   Application、Camera、Input、Frame 数据
+├─ Editor/                 ImGui 面板、拾取、Gizmo 和编辑状态
+├─ Platform/               Windows 文件对话框等平台边界
+└─ Renderer/
+   ├─ Core/                 Renderer 门面和 GPU 资源所有权
+   ├─ Diagnostics/          GPU Timer、Debug Group、提交统计
+   ├─ Pipeline/             RenderPipeline、Pass Contract、Settings
+   ├─ Passes/               Shadow、Reflection、Forward、NPR、后处理
+   ├─ Resources/            Mesh、Material、Shader、Texture、Framebuffer
+   ├─ Scene/                RenderScene、Primitive/Light Proxy
+   └─ View/                 RenderView、RenderItem、Batch、Frustum
+
+assets/shaders/
+├─ pbr/                     标准 PBR、Instanced、Tessellation/Displacement
+├─ shadow/                  阴影深度
+├─ environment/             Skybox/Cubemap
+├─ reflection/              反射地面
+├─ npr/                     Outline 等 NPR Shader
+├─ postprocess/             SSAO、Bloom、PostProcess
+├─ present/                 离屏结果显示
+└─ debug/                   灯光 Gizmo 等调试 Shader
+
+docs/                       各子系统的数据流、契约和验证记录
+tests/                      数学、资源、导入器和编辑器交互测试
+ThirdParty/                 固定版本第三方依赖
 ```
 
-## 核心模块
+## 技术边界与下一步
 
-- `Application`：管理 GLFW 窗口、输入、模型加载和每帧渲染流程。
-- `Renderer/Core`：持有场景 GPU 资源并启动渲染管线。
-- `RenderPipeline`：拥有并按顺序执行 Shadow、Reflection、Forward、Present 渲染 Pass。
-- `RenderPass`：定义单个渲染阶段的执行契约，Pass 之间通过当前帧上下文传递工作。
-- `Renderer/Passes`：实现各个具体 GPU 渲染阶段。
-- `RenderScene`：保存与游戏逻辑解耦的 Primitive 和 Light 渲染代理。
-- `RenderView`：描述一次相机观察，并保存按材质类型分类的 `RenderItem` 列表。
-- `Renderer/Resources`：封装 Mesh、Material、Shader、Texture 和 Framebuffer 等 GPU 资源。
-- `Camera`：生成视图矩阵和透视/正交投影矩阵。
-- `Mesh`：管理 VAO、VBO 和网格绘制。
-- `Shader`：负责 GLSL 编译、链接和 Uniform 设置。
-- `Framebuffer`：管理离屏颜色与深度附件。
-- `ShadowMap`：管理阴影深度纹理和深度专用 FBO。
-- `LightGizmo`：绘制光源位置调试图标。
+当前实现刻意保持在可展示、可解释的范围内，尚未包括：
 
-## 课程参考
+- Cascaded Shadow Maps、Point Light 阴影和多 Shadow Map 管理；
+- 自动曝光、遮挡裁剪、距离裁剪和更精确的包围体；
+- Alpha Cutout 阴影、Masked/Additive 和 OIT；
+- Hair Highlight、通用 Shadow Ramp、动画运行时蒙皮；
+- 显式 Render Graph、跨 API RHI、完整资源 generation 校验；
+- Scene 层级、对象创建/删除、序列化和 Undo/Redo。
 
-本项目参考 University of Utah 的 Interactive Computer Graphics 课程：
+下一轮工作遵循最终 60 秒展示目标：先完成 Lumine Face Shadow 的用户视觉验收，再验收 50-60 秒 Editor 工作流；在透明材质扩展前，先明确 Alpha Cutout 阴影、排序和混合策略。性能优化只有在基准或 RenderDoc 证据显示瓶颈后才进入优先级。
 
-- Course: Interactive Computer Graphics
-- School: School of Computing, University of Utah
-- Website: https://graphics.cs.utah.edu/courses/cs6610/spring2021/
+## 文档索引
 
-`docs/assignments/` 中保留了 Project 1 至 Project 3 的学习笔记；当前主程序已在这些基础上继续扩展离屏渲染、反射与阴影功能。
+- [PBR Material Workflow](docs/pbr-material-workflow.md)
+- [Toon Shading](docs/npr-toon.md)
+- [Face Shadow](docs/npr-face-shadow.md)
+- [Outline](docs/npr-outline.md)
+- [Translucency Pass](docs/translucency-pass.md)
+- [SSAO](docs/ssao.md)
+- [HDR and Tone Mapping](docs/hdr-tone-mapping.md)
+- [Bloom and Post Process](docs/bloom-postprocess.md)
+- [Scene Window and Inspector](docs/editor-scene-inspector.md)
+- [Viewport Transform Controls](docs/viewport-transform-controls.md)
+- [GPU Pass Profiling](docs/gpu-pass-profiling.md)
+- [RenderDoc Baseline](docs/renderdoc-baseline.md)
 
-## 第三方库
+## 许可证与资产署名
 
-- GLFW
-- GLAD
-- cyCodeBase
-- LodePNG
-
-各第三方库的许可信息请参阅其在 `ThirdParty/` 目录中的 LICENSE 或 README 文件。
+项目代码和第三方依赖的许可证信息请查看对应目录中的 LICENSE/README 文件。外部角色资产不属于本仓库；使用或分发该资产时，必须保留其原始 `README.txt` 中的作者和来源说明。
